@@ -74,8 +74,9 @@ namespace DS18B20 {
     // Wait for conversion (750ms for 12-bit)
     // While converting, the sensor pulls the bus low. 
     // We'll just wait for it to return to high.
-    uint16_t start = ClockLR::now;
+    uint16_t start = ClockLR::tick();
     while (!ds_read_bit(dataPin)) {
+      ClockLR::tick();
       if (ClockLR::isElapsed(start, 900)) return NO_READING; // Timeout
     }
   
