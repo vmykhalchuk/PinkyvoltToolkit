@@ -1,0 +1,61 @@
+
+
+IMPROVE TO SUPPORT OTHER THEN PORT D
+
+---------- SOLUTION #1 ------------
+template <uintptr_t PORT_ADDR, uint8_t PIN_BIT>
+class PinkyVoltOneWireErrorTransmitter final {
+  private:
+    // AVR registers are typically: PIN = PORT-2, DDR = PORT-1
+    static volatile uint8_t& _PORT() { return *reinterpret_cast<volatile uint8_t*>(PORT_ADDR); }
+    static volatile uint8_t& _DDR()  { return *reinterpret_cast<volatile uint8_t*>(PORT_ADDR - 1); }
+    static volatile uint8_t& _PIN()  { return *reinterpret_cast<volatile uint8_t*>(PORT_ADDR - 2); }
+
+    void inline setPinToOutput() {
+        _DDR() |= (1 << PIN_BIT);
+    }
+    // ... apply similar logic to setPinToHigh/Low
+};
+
+// Usage for Pin D2 (PORTD, bit 2):
+PinkyVoltOneWireErrorTransmitter<(uintptr_t)&PORTD, 2> transmitter;
+---------- SOLUTION #1 ------------
+
+---------- SOLUTION #2 ------------
+struct ArduinoPin {
+    volatile uint8_t* port;
+    volatile uint8_t* ddr;
+    volatile uint8_t* pinReg;
+    uint8_t bit;
+};
+
+// Definition for Pin 2 (D2)
+constexpr ArduinoPin D2 = { &PORTD, &DDRD, &PIND, 2 };
+
+template <const ArduinoPin& PIN_CFG>
+class PinkyVoltOneWireErrorTransmitter {
+    void inline setDPinToHigh() {
+        *PIN_CFG.port |= (1 << PIN_CFG.bit);
+    }
+};
+---------- SOLUTION #2 ------------
+
+
+---------- SOLUTION #3 ------------
+template <uint8_t PIN>
+class PinkyVoltOneWireErrorTransmitter final {
+  private:
+    static constexpr uint8_t bit = digitalPinToBitMask(PIN);
+    static constexpr uint8_t port = digitalPinToPort(PIN);
+    
+    // Safety check that works across all ports
+    static_assert(digitalPinToPort(PIN) != NOT_A_PIN, "Invalid Arduino Pin!");
+
+    void inline setDPinToHigh() {
+        volatile uint8_t *out = portOutputRegister(port);
+        *out |= bit; 
+        // Note: SBI assembly only works if the address is known at compile time. 
+        // Modern GCC with optimizations often converts the above to an SBI anyway!
+    }
+};
+---------- SOLUTION #3 ------------
