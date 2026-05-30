@@ -132,8 +132,10 @@ namespace pvt::toolkit::debug::tx::v2 {
         _WR_S0                              = _G_WR | 1,
         _WR_S1                              = _G_WR | 2,
         _WR_S2                              = _G_WR | 3,
-        _WR_S3                              = _G_WR | 4,
-      //_WR_ERROR                           = _G_WR | 5,
+        _WR_S3_L                            = _G_WR | 4,
+        _WR_S3_H                            = _G_WR | 5,
+        _WR_S4                              = _G_WR | 6,
+      //_WR_ERROR                           = _G_WR | 7,
 
         // -- READING --
         _RD_START                           = _G_RD | 0,
@@ -207,7 +209,7 @@ namespace pvt::toolkit::debug::tx::v2 {
         static_assert(TXModeCount==4, "TXModeCount must be = 4!");
 
         uint8_t _trnst = _TRANSITION_MAP[(uint8_t)_currTXMode]; //TODO [PERFORMANCE] 
-        uint8_t opCode = _trnst >> ((uint8_t)changeTo<<1);      //TODO [PERFORMANCE] replace with dierct map access - to remove bit manipulations which are slow (make it tunable via constexpr bool, so user can decide speed vs code compactness)
+        uint8_t opCode = _trnst >> ((uint8_t)changeTo<<1);      //TODO [PERFORMANCE] replace with direct map access - to remove bit manipulations which are slow (make it tunable via constexpr bool, so user can decide speed vs code compactness)
         opCode &= 0x3;
 
         switch (opCode) {
@@ -362,6 +364,11 @@ namespace pvt::toolkit::debug::tx::v2 {
         _commError = 0;
         return e;
       }
+      
+      // Helping methods to let TX device free line, and freely go to long slumber. First disable communication, than run as many times `tick()` as needed, till isCommunicating() returns false
+      static void enableCommunication() {}; // FIXME Implement
+      static void disableCommunication() {}; // FIXME Implement
+      static bool isCommunicating() {}; // FIXME Implement
 
     private:
 
@@ -458,9 +465,10 @@ namespace pvt::toolkit::debug::tx::v2 {
           
         } else if (_HS__S6 == state) {          // line == H (SPD+AH)
           _tx_AH2PU();                          // TX=>PU; Line=L (SPD+PU)
-          // in this moment RX tests if line is PU or AL, and immediately goes to drive it low itself
+          // in this moment RX tests if line is PU or AL, and immediately goes to SPD
           //                   tests by pulling line Up for very short moment
-          _waitFullCycleAndSwitchToLH(_HS__S7, _CRIT__COMMERROR);
+          //                   all must happen within 1.5uS window
+          _waitFullCycleAndSwitchToLH(_HS__S7, _CRIT__COMMERROR); // TX is forced to wait 4uS minimum, only then check line
           
         } else if (_HS__S7 == state) {          // line == L (SPD+PU)
           _switchToLH(_WR_START, _CRIT__COMMERROR);
@@ -490,32 +498,55 @@ namespace pvt::toolkit::debug::tx::v2 {
           
         } else if (_WR_S1 == state) {           // Line == H (SPD+AH)
           bool isHigh = _writingData[_bitNo >> 3] & (1<<(_bitNo&7));
-          if (!isHigh) {
+          // FIXME Update accordingly to new protocol (HU => HLHU; HLU => HU)
+          if (isHigh) {
+            // Write 1
+            _tx_AH2PU();                        // TX=>PU; Line=L (SPD+PU)
+            _waitFullCycleAndSwitchToLH(_WR_S3_L, _WR_S3_H);
+          } else {
             // Write 0
             _tx_AH2AL();                        // TX=>AL; Line=L (SPD+AL)
             _waitFullCycleAndSwitchToLH(_WR_S2, _RD_ERROR);
-          } else {
-            // Write 1
-            _tx_AH2PU();                        // TX=>PU; Line=L (SPD+PU)
-            _waitFullCycleAndSwitchToLH(_WR_S3, _RD_ERROR);
           }
           
         } else if (_WR_S2 == state) {           // Line == L (SPU+AL)
-          _tx_AL2Z();                          // TX=> Z; Line=H (SPU+ Z) // we do not need to stop interrupts here - even if it happens that code is interrupted and delayed - if all right on Receiver side - it will not harm protocol ... theoretically
+          _tx_AL2Z();                           // TX=> Z; Line=H (SPU+ Z) // we do not need to stop interrupts here - even if it happens that code is interrupted and delayed - if all right on Receiver side - it will not harm protocol ... theoretically
                                                                            // the reason it will keep working is:
-                                                                           //    Z as well as PU will let RX see that line can be strong pulled Down
-          _tx_Z2PU();                          // TX=>PU; Line=H (SPU+PU)
-          _waitFullCycleAndSwitchToLH(_WR_S3, _RD_ERROR);
-          
-        } else if (_WR_S3 == state) {           // Line == L (SPD+PU)
+                                                                           //    Z is same as PU - will let RX verify if line can be strong pulled Down (meaning PU is activated on TX side, thats what Receiver has to know)
+          _tx_Z2PU();                           // TX=>PU; Line=H (SPU+PU)
+          _waitFullCycleAndSwitchToLH(_WR_S3_L, _WR_S3_H);
+        
+        } else if (_WR_S3_L == state) {         // Line == L (SPD+PU)
+          // RX responds with SPD when more bits to read
           _bitNo++;
           if (_bitNo < ((SIZE+2)<<3)) {
             _switchToLH(_WR_S0, _RD_ERROR);
           } else {
-            // last bit was written - exit
-            _switchToLH(_RD_START, _RD_ERROR);
+            // Error: last bit was written - however Receiver waits for more - something wrong
+            _switchToLH(_RD_ERROR, _RD_ERROR);
           }
           
+        } else if (_WR_S3_H == state) {         // Line == H (SPU+PU)
+          // RX responds with SPU when there is no more to read
+          _bitNo++;
+          if (_bitNo < ((SIZE+2)<<3)) {
+            // Error: there are still data bits to write - however Receiver stopped waiting for more
+            _switchToLH(_RD_ERROR, _RD_ERROR);
+          } else {
+            // last bit was written - confirm by driving low and - exit
+            // FIXME Implement this confirmation on Receiver side!!!
+            _tx_PU2AH();
+            _tx_AH2AL();                        // TX=>AL; Line=L (SPU+AL)
+            _waitFullCycleAndSwitchToLH(_WR_S4, _RD_ERROR);
+          }
+          
+        } else if (_WR_S4 == state) {           // Line == L (SPU+AL)
+          _tx_AL2Z();                           // TX=> Z; Line=H (SPU+ Z)  // FIXME Think on how we transition here
+          _tx_Z2PU();                           // TX=>PU; Line=H (SPU+PU)
+          
+          //_switchToLH(??? _RD_START, ???_RD_ERROR); // FIXME Reenable Reading part
+          // Done writing - switching to Waiting for handshake
+          _switchToLH(_SPEC__WAITING_FOR_HANDSHAKE, _SPEC__WAITING_FOR_HANDSHAKE);
         } else {
            _switchToLH(_CRIT__ALG_ERR__BAD_STATE, _CRIT__ALG_ERR__BAD_STATE);
         }
@@ -593,7 +624,7 @@ namespace pvt::toolkit::debug::tx::v2 {
             _writingData[i+1] = _data[i];
             _data[i] = 0;
           }
-          _writingData[SIZE+1] = CRC8::calculate(_writingData, SIZE + 1);
+          _writingData[SIZE + 1] = CRC8::calculate(_writingData, 1 + SIZE); // SYS Byte + Data
         }
       }
   
@@ -614,6 +645,7 @@ namespace pvt::toolkit::debug::tx::v2 {
   template <uint8_t P, uint8_t S>
   uint8_t OneWireErrorTransmitter<P, S>::_skipCycleTmr0p1 = 0;
 
+  // FIXME Define first steps to be some kind of SETUP - to remove user-mandated setup() method
   template <uint8_t P, uint8_t S>
   typename OneWireErrorTransmitter<P, S>::FSMState OneWireErrorTransmitter<P, S>::_if_L_then = OneWireErrorTransmitter<P, S>::_NOOP;
   template <uint8_t P, uint8_t S>
