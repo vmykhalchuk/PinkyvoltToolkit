@@ -51,36 +51,26 @@ namespace pvt::toolkit::debug::rx::v2 {
         TCNT1 = 0;
       }
       
-      inline static void noop2x() {
-        asm volatile ("NOP" : : : "memory");
-        asm volatile ("NOP" : : : "memory");
-      }
-
       inline static void _pullUp() {
         PORTD |= _PULL_MASK;
-        // Required:
-        // allow GPIO/bus voltage to settle before sampling PIND.
-        // We intentionally detect contention through 200R coupling.
-        __builtin_avr_delay_cycles(2);
-        //noop2x();
       }
+      
       inline static void _pullDown() {
         PORTD &= ~_PULL_MASK;
-        noop2x();
       }
 
-      inline static bool _isPullUp() {
+      inline static bool _isPullUpEnabled() {
         return PORTD & _PULL_MASK;
       }
-      inline static bool _isPullDown() {
-        return !(PORTD & _PULL_MASK);
+      inline static bool _isPullDownEnabled() {
+        return !_isPullUpEnabled();
       }
       
       inline static bool _isLineHigh() {
         return PIND & _LINE_MASK;
       }
       inline static bool _isLineLow() {
-        return !(PIND & _LINE_MASK);
+        return !_isLineHigh();
       }
 
       static constexpr uint16_t _PACKET_HANDSHAKE = 0B10101;
@@ -114,10 +104,10 @@ namespace pvt::toolkit::debug::rx::v2 {
        *   0x1x - communication start error
        *   0x5x - timeout error, x - transition at which error happened
        */
-      static uint16_t _readPacket(uint8_t &error) {
+      static inline uint16_t _readPacket(uint8_t &error) {
         error = 0xFF;
 
-        if (!_isPullUp()) {
+        if (!_isPullUpEnabled()) {
           // Algorithm error : expected to have Pull-Up enabled
           error = 0xE0;
           return 0;
@@ -127,11 +117,12 @@ namespace pvt::toolkit::debug::rx::v2 {
         ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
           // step 2
           if (_isLineLow()) {
-            // error - TX is actively driving line Low (most likely it is in the middle of faulty transmission)
+            // error - TX is actively driving line Low (most likely we are in the middle of faulty transmission)
             error = 0x11;
             return 0;
           }
           _pullDown(); // Start packet
+          __builtin_avr_delay_cycles(2);
           // step 3
           if (_isLineHigh()) {
             // strange error - it should be Low, but now TX is driving line active high
@@ -146,7 +137,7 @@ namespace pvt::toolkit::debug::rx::v2 {
             // Waiting for line to get High ;)
             //uint8_t t1=0;
             uint8_t start=TCNT1L;
-            while (!_isLineHigh()) {
+            while (_isLineLow()) {
               /*if (TIFR0 & (1 << TOV0)) {
                 TIFR0 = (1 << TOV0);
                 t1++;
@@ -168,6 +159,7 @@ namespace pvt::toolkit::debug::rx::v2 {
   
             // Check if TX is pulling line Up or Actively drives it High
             _pullDown();
+            __builtin_avr_delay_cycles(2);
             if (_isLineLow()) {
               // TX is driving line via PullUp (end of packet)
               _pullUp();
@@ -201,6 +193,7 @@ namespace pvt::toolkit::debug::rx::v2 {
   
             // Check if TX is pulling line Up or Actively drives it Low
             _pullUp();
+            __builtin_avr_delay_cycles(2);
             if (_isLineHigh()) {
               // TX is driving line via PullUp (end of packet)
               _pullUp();
@@ -222,7 +215,7 @@ namespace pvt::toolkit::debug::rx::v2 {
        *   0x1x - readPacket error
        *   0x2x - packet is not 0 or 1
        */
-      static uint8_t _readByte(uint8_t &error) {
+      static inline uint8_t _readByte(uint8_t &error) {
         error = 0xFF;
         uint8_t res = 0;
         for (uint8_t bitNo = 0; bitNo < 8; bitNo++) {

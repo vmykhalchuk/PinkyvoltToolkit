@@ -194,3 +194,46 @@ On higher level protocol:
   - TX sends CRC byte (system + data bytes)
   - TX reads 1 control byte from RX
   - TX reads 1 crc byte (accounting control byte) from RX to validate frame
+
+
+-----
+
+#### Another view on protocol
+
+TX Sends packets. Each packet starts with H and ends with U.
+
+RX must always strongly pull line into opposite direction to the signal.
+This is required to be able to detect when TX changes signal from H to U or from L to U.
+(To better understand this - imagine line is H, without strongly pulling line down - 
+    when TX changes line into U - no line state change occurs (line remains H),
+    so RX will not see state change)
+
+When packet ends RX can either:
+  - pull line strongly Down - to let TX continue transmission
+  - or pull line strongly Up - to either signal TX:
+    - that transmission is failed - if in the middle of frame
+    - or it is the end of transmission - all bits received
+    
+Packets are:
+  - HLHLHUU - handshake
+    HLHLHlL
+  
+  - HUU  - send 1
+    HlL
+  - HLUU - send 0
+    HLhL
+  
+  - HUU - end of transmission
+    HlH  <- RX wants to rest
+    HlL  <- RX ready for next round
+  
+  - HLHU - request bit from RX
+    as a reply - RX either sets line SPU (1) or SPD(0)
+    based on that TX sends either LU packet (on response to 1) or HU packed (on response to 0)
+    
+    
+NOTES: When Line is forced Low (due to RX malfunction) - TX will see it as always ready to work.
+       We need some mechanism to let TX know that RX malfunctioned.
+       We could change handshake to something like: HLHLU LHU
+
+NOTE2: What if TX pin is shorted to GND on RX side? Then it will get burned. We need mechanism to protect it.

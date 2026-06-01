@@ -132,9 +132,9 @@ namespace pvt::toolkit::debug::tx::v2 {
         _WR_S0                              = _G_WR | 1,
         _WR_S1                              = _G_WR | 2,
         _WR_S2                              = _G_WR | 3,
-        _WR_S3_L                            = _G_WR | 4,
-        _WR_S3_H                            = _G_WR | 5,
-        _WR_S4                              = _G_WR | 6,
+        _WR_S3                              = _G_WR | 4,
+        _WR_S4                              = _G_WR | 5,
+        _WR_S5                              = _G_WR | 6,
       //_WR_ERROR                           = _G_WR | 7,
 
         // -- READING --
@@ -312,7 +312,10 @@ namespace pvt::toolkit::debug::tx::v2 {
         //    +1) Suspend interrupts
         //     2) ignore it - since we are setting bit - set after set => same result
         //     3) [BEST] make it configurable (one of above three solutions)
-        ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
+        ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { // FIXME use template boolean to either make class therad-safe or not (for advanced users - no need in these additional locks)
+                                            // simply implement if (THREAD_SAFE_ENABLED) _registerErrorThreadSafe(errorFlag) else _registerError(errorFlag);
+                                            // _registerErrorThreadSafe() utilizes _registerError() but also has this ATOMIC_BLOCK
+                                            // Do that for all methods that access shared variables
           _data[errorFlag>>3] |= 1 << (errorFlag & 0x7);
         }
       }
@@ -365,10 +368,13 @@ namespace pvt::toolkit::debug::tx::v2 {
         return e;
       }
       
+      static uint8_t getLastFrameSentNo() { return 0; } // FIXME Implement
+      static uint8_t getLastSucceesfulFrameSentNo() { return 0; } // FIXME Implement
+      
       // Helping methods to let TX device free line, and freely go to long slumber. First disable communication, than run as many times `tick()` as needed, till isCommunicating() returns false
       static void enableCommunication() {}; // FIXME Implement
       static void disableCommunication() {}; // FIXME Implement
-      static bool isCommunicating() {}; // FIXME Implement
+      static bool isCommunicating() { return false; }; // FIXME Implement
 
     private:
 
@@ -424,7 +430,7 @@ namespace pvt::toolkit::debug::tx::v2 {
       inline static void _handleCritState(FSMState state) {
         if (_CRIT__COMMERROR == state) {// Line == <ANY>
           _commError |= CMERR__PROTOCOL_FAILURE;
-          // FIXME Add restart here after waiting for full cycle for two times
+          // FIXME Add restart here after waiting full cycle two times
           setup();
 
         } else if (_CRIT__ALG_ERROR_TXOUT == state) {// Line == <ANY>
@@ -468,11 +474,8 @@ namespace pvt::toolkit::debug::tx::v2 {
           // in this moment RX tests if line is PU or AL, and immediately goes to SPD
           //                   tests by pulling line Up for very short moment
           //                   all must happen within 1.5uS window
-          _waitFullCycleAndSwitchToLH(_HS__S7, _CRIT__COMMERROR); // TX is forced to wait 4uS minimum, only then check line
+          _waitFullCycleAndSwitchToLH(_WR_START, _CRIT__COMMERROR); // TX is forced to wait 4uS minimum, only then check line
           
-        } else if (_HS__S7 == state) {          // line == L (SPD+PU)
-          _switchToLH(_WR_START, _CRIT__COMMERROR);
-
         } else {
            _switchToLH(_CRIT__ALG_ERR__BAD_STATE, _CRIT__ALG_ERR__BAD_STATE);
         }
@@ -498,11 +501,10 @@ namespace pvt::toolkit::debug::tx::v2 {
           
         } else if (_WR_S1 == state) {           // Line == H (SPD+AH)
           bool isHigh = _writingData[_bitNo >> 3] & (1<<(_bitNo&7));
-          // FIXME Update accordingly to new protocol (HU => HLHU; HLU => HU)
           if (isHigh) {
             // Write 1
             _tx_AH2PU();                        // TX=>PU; Line=L (SPD+PU)
-            _waitFullCycleAndSwitchToLH(_WR_S3_L, _WR_S3_H);
+            _waitFullCycleAndSwitchToLH(_WR_S3, _RD_ERROR);
           } else {
             // Write 0
             _tx_AH2AL();                        // TX=>AL; Line=L (SPD+AL)
@@ -514,39 +516,30 @@ namespace pvt::toolkit::debug::tx::v2 {
                                                                            // the reason it will keep working is:
                                                                            //    Z is same as PU - will let RX verify if line can be strong pulled Down (meaning PU is activated on TX side, thats what Receiver has to know)
           _tx_Z2PU();                           // TX=>PU; Line=H (SPU+PU)
-          _waitFullCycleAndSwitchToLH(_WR_S3_L, _WR_S3_H);
+          _waitFullCycleAndSwitchToLH(_WR_S3, _RD_ERROR);
         
-        } else if (_WR_S3_L == state) {         // Line == L (SPD+PU)
-          // RX responds with SPD when more bits to read
+        } else if (_WR_S3 == state) {           // Line == L (SPD+PU)
           _bitNo++;
           if (_bitNo < ((SIZE+2)<<3)) {
             _switchToLH(_WR_S0, _RD_ERROR);
           } else {
-            // Error: last bit was written - however Receiver waits for more - something wrong
-            _switchToLH(_RD_ERROR, _RD_ERROR);
-          }
-          
-        } else if (_WR_S3_H == state) {         // Line == H (SPU+PU)
-          // RX responds with SPU when there is no more to read
-          _bitNo++;
-          if (_bitNo < ((SIZE+2)<<3)) {
-            // Error: there are still data bits to write - however Receiver stopped waiting for more
-            _switchToLH(_RD_ERROR, _RD_ERROR);
-          } else {
-            // last bit was written - confirm by driving low and - exit
-            // FIXME Implement this confirmation on Receiver side!!!
-            _tx_PU2AH();
-            _tx_AH2AL();                        // TX=>AL; Line=L (SPU+AL)
+            // last bit was written - now TX should reply with `HU` to end transmission
             _waitFullCycleAndSwitchToLH(_WR_S4, _RD_ERROR);
           }
           
-        } else if (_WR_S4 == state) {           // Line == L (SPU+AL)
-          _tx_AL2Z();                           // TX=> Z; Line=H (SPU+ Z)  // FIXME Think on how we transition here
-          _tx_Z2PU();                           // TX=>PU; Line=H (SPU+PU)
-          
-          //_switchToLH(??? _RD_START, ???_RD_ERROR); // FIXME Reenable Reading part
+        } else if (_WR_S4 == state) {           // Line == L (SPD+PU)
+          _tx_PU2AH();                          // TX=>AH; Line=H (SPD+AH)
+          _waitFullCycleAndSwitchToLH(_RD_ERROR, _WR_S5);
+        
+        } else if (_WR_S5 == state) {           // Line == H (SPD+AH)
+          _tx_AH2PU();                          // TX=>PU; Line=L (SPD+PU)  // Here line becomes L, RX knows that current frame is over,
+                                                                            // now it pulls line Up, indicating it is done and busy with its own tasks.
+                                                                            // Q: But how would it know when TX is ready to continue?
+                                                                            // A: TX should expect either state - H - wait; L - start handshake
+        
           // Done writing - switching to Waiting for handshake
-          _switchToLH(_SPEC__WAITING_FOR_HANDSHAKE, _SPEC__WAITING_FOR_HANDSHAKE);
+          _waitFullCycleAndSwitchToLH(_SPEC__WAITING_FOR_HANDSHAKE, _SPEC__WAITING_FOR_HANDSHAKE);
+          
         } else {
            _switchToLH(_CRIT__ALG_ERR__BAD_STATE, _CRIT__ALG_ERR__BAD_STATE);
         }
