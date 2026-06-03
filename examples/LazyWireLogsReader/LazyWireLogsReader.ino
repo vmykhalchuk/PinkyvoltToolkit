@@ -12,7 +12,9 @@ void setup() {
 }
 
 void loop() {
-  if (ErrorRx::readFrame(0x31)) {
+  uint8_t err = 0xCC;
+  if (ErrorRx::readFrame(0x31, err)) {
+    Serial.print("Error: "); Serial.println(err, HEX);
     if (ErrorRx::isReceivedData()) {
       Serial.println("No new Date. Strange Error :(");
     }

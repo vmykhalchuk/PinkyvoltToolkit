@@ -1,8 +1,8 @@
 ### Idea
 
-Design protocol to let MCU communicate with help of a single pin.
+Design protocol to let Main MCU communicate with help of a single pin.
 
-Constraints on Transmitter side:
+Constraints on Main MCU side, we will call it Transmitter:
   - Single pin only:
      - Z state (can read line)
      - Pull Up (can read line)

@@ -27,12 +27,16 @@ namespace pvt::toolkit::debug::rx::v2 {
   template<uint8_t PORTD_LINE_PN, uint8_t PORTD_PULL_PN>
   class OneWireErrorReceiver final {
     private:
+
+      static_assert((PORTD_LINE_PN <= 7), "PORTD_LINE_PN must be within 0..7 range!");
+      static_assert((PORTD_PULL_PN <= 7), "PORTD_PULL_PN must be within 0..7 range!");
+      
       OneWireErrorReceiver() {};
     
       static constexpr uint8_t _LINE_MASK = 1<<PORTD_LINE_PN;
       static constexpr uint8_t _PULL_MASK = 1<<PORTD_PULL_PN;
 
-      static constexpr uint16_t HANDSHAKE_TIMEOUT_TMR1_OVERFLOWS = 5; // each overflow is around 4s
+      static constexpr uint16_t COMM_TIMEOUT_TMR1_OVERFLOWS = 5; // ~20s (each overflow is around 4s)
 
       static void _init() {
         // set LINE as input - no pull-up
@@ -40,6 +44,7 @@ namespace pvt::toolkit::debug::rx::v2 {
         PORTD &= ~_LINE_MASK;
 
         // set PULL as output - pull-up enabled
+        // we set internal pull-up first - to prevent line to go down (that can happen if we swap below two instructions)
         PORTD |= _PULL_MASK;
         DDRD |= _PULL_MASK;
       }
@@ -49,6 +54,7 @@ namespace pvt::toolkit::debug::rx::v2 {
         TCCR1B = 0;
         TCCR1B = (1 << CS12) | (1 << CS10); // prescaler = 1024 = 64us
         TCNT1 = 0;
+        TIFR1 = (1 << TOV1); // clear Tmr1 Overflow flag
       }
       
       inline static void _pullUp() {
@@ -72,250 +78,278 @@ namespace pvt::toolkit::debug::rx::v2 {
       inline static bool _isLineLow() {
         return !_isLineHigh();
       }
+      
+      // pulledUp=false when actively driven HIGH by TX
+      // pulledUp=true when Pulled Up by TX
+      // return false if timedout and line is still LOW
+      inline static bool _waitForLineToGetHigh(bool &pulledUp) {
+        pulledUp = false;
+        // Waiting for line to get High ;)
+        //uint8_t t1=0; // timeout option 1
+        //uint8_t start=TCNT1L; // timeout option 2
+        uint8_t overflows=0; // timeout option 3
+        TIFR1 = (1 << TOV1); // clear Tmr1 Overflow flag
+        while (_isLineLow()) {
+          // timeout option 1: (not working due to no interrupts)
+          //if (TIFR0 & (1 << TOV0)) {
+          //  TIFR0 = (1 << TOV0);
+          //  t1++;
+          //  if (t1 == 0) { // 256*1.024ms = ~262ms
+          //    // error - timed-out waiting for TX
+          //    return false;
+          //  }
+          //}
+          
+          // timeout option 2: Timer 1: too short
+          //if (TCNT1L - start > 16) { // every Timer1 tick is 64uS, here we wait for around 1024uS
+          //  // error - timed-out waiting for TX
+          //  return false;
+          //}
+          
+          // timeout option 3: Timer 1 overflows
+          if (TIFR1 & (1 << TOV1)) {
+            TIFR1 = (1 << TOV1); // clear Tmr1 Overflow flag
+            overflows++;
+            if (overflows > COMM_TIMEOUT_TMR1_OVERFLOWS) {
+              // timed out
+              return false;
+            }
+          }
+        }
 
-      static constexpr uint16_t _PACKET_HANDSHAKE = 0B10101;
-      static constexpr uint16_t _PACKET_1         = 0B00001;
-      static constexpr uint16_t _PACKET_0         = 0B00010;
-      static constexpr uint16_t _PACKET_READ_REQ  = 0B00101;
+        // Check if TX is pulling line Up or Actively drives it High
+        _pullDown();
+        __builtin_avr_delay_cycles(2);
+        if (_isLineLow()) { // TX is driving line via internal PullUp
+          pulledUp = true;
+        }
+        return true;
+      }
 
-      /*
-          Note: RX Drives line via 200R resistor, making it possible for TX to override line state
-          /// Start And Handshake (TX is powered first)
-          RXST: 0       1   2 3      4      5 6     7      8 9   a b    c d    
-            RX:             r r......r......r r.....r r....r r...r r....r r....
-            RX: Z       U    D               U       D      U     D      U
-            LN: Z...H........L......H......L.......H......L.....H......L.H.....
-            TX: Z   U               H      L       H      L     H      U      
-            TX:           r   r    r                                          r
-          TXST: 0   1     2   3    4       5       6      7     8      9      a
-       */
+      // pulledUp=false when actively driven LOW by TX
+      // pulledUp=true when Pulled Up by TX
+      // return false if timedout and line is still HIGH
+      inline static bool _waitForLineToGetLow(bool &pulledUp) {
+        pulledUp = false;
+        // Waiting for line to get Low ;)
+        uint8_t overflows=0;
+        TIFR1 = (1 << TOV1); // clear Tmr1 Overflow flag
+        while (_isLineHigh()) {
+          if (TIFR1 & (1 << TOV1)) {
+            TIFR1 = (1 << TOV1); // clear Tmr1 Overflow flag
+            overflows++;
+            if (overflows > COMM_TIMEOUT_TMR1_OVERFLOWS) {
+              // timed out
+              return false;
+            }
+          }
+        }
+
+        // Check if TX is pulling line Up or Actively drives it Low
+        _pullUp();
+        __builtin_avr_delay_cycles(2);
+        if (_isLineHigh()) { // TX is driving line via internal PullUp
+          pulledUp = true;
+        }
+        return true;
+      }
+
+      static constexpr uint16_t _PACKET_HANDSHAKE = 5; // HLHLHU
+      static constexpr uint16_t _PACKET_1         = 1; // HU
+      static constexpr uint16_t _PACKET_0         = 2; // HLU
+      static constexpr uint16_t _PACKET_READ_REQ  = 3; // HLHU
+
       /**
        * returns one of packets:
        *   0 - no packet received or error (check error for details)
-       *   0B10101 - Handshake
-       *   0B1     - 1
-       *   0B10    - 0
-       *   0B101   - Read Request
+       *   5: HLHLHU - Handshake
+       *   1: HU     - 1
+       *   2: HLU    - 0
+       *   3: HLHU   - Read Request
        * 
        * error:
        *   0 - no error
-       *   0xFF - unknown error
-       *   0xEx - algorithm error
-       *   0x1x - communication start error
-       *   0x5x - timeout error, x - transition at which error happened
+       *   0x1 - Line is expected to be Low
+       *   0x2 - time out
+       *   0x3 - too long packet sequence
+       *
+       *   0xE - algorithm error : pull down was not enabled!
+       *   0xF - unknown error
        */
-      static inline uint16_t _readPacket(uint8_t &error) {
-        error = 0xFF;
+      static constexpr uint8_t _READ_PACKET_ERR_TMOUT = 0x2;
+      static inline uint8_t _readPacket(uint8_t &error) {
+        error = 0xF;
 
-        if (!_isPullUpEnabled()) {
-          // Algorithm error : expected to have Pull-Up enabled
-          error = 0xE0;
-          return 0;
+        if (!_isPullDownEnabled()) {
+          // Algorithm error : expected to have Pull-Down enabled
+          error = 0xE; return 0;
         }
+        if (!_isLineLow()) {
+          // Line is expected to be Low yet
+          error = 0x1; return 0;
+        }
+        uint8_t res = 0;
 
+        for (uint8_t i = 0; i < 10; i++) {
+          
+          bool isPU = false;
+          if (_waitForLineToGetHigh(isPU)) {
+            if (isPU) {
+              // End of Packet
+              error = 0; return res;
+            }
+          } else {
+            // Timedout
+            error = _READ_PACKET_ERR_TMOUT; return res;
+          }
+          
+          res++;
 
-        ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-          // step 2
-          if (_isLineLow()) {
-            // error - TX is actively driving line Low (most likely we are in the middle of faulty transmission)
-            error = 0x11;
-            return 0;
+          if (_waitForLineToGetLow(isPU)) {
+            if (isPU) {
+              // End of Packet
+              error = 0; return res;
+            }
+          } else {
+            // Timedout
+            error = _READ_PACKET_ERR_TMOUT; return res;
           }
-          _pullDown(); // Start packet
-          __builtin_avr_delay_cycles(2);
-          // step 3
-          if (_isLineHigh()) {
-            // strange error - it should be Low, but now TX is driving line active high
-            error = 0x12;
-            return 0;
-          }
-  
-          uint16_t res = 0;
-  
-          for (uint8_t i = 0; i < 6; i++) {
-            
-            // Waiting for line to get High ;)
-            //uint8_t t1=0;
-            uint8_t start=TCNT1L;
-            while (_isLineLow()) {
-              /*if (TIFR0 & (1 << TOV0)) {
-                TIFR0 = (1 << TOV0);
-                t1++;
-                if (t1 == 0) { // 256*1.024ms = ~262ms
-                  // error - timed-out waiting for TX
-                  _pullUp();
-                  error = 0x50 | i<<1;
-                  return 0;
-                }
-              }*/
-              if (TCNT1L - start > 16) { // every Timer1 tick is 64uS, here we wait for around 1024uS
-                // FIXME Make it configurable, so TX can hang for longer than 1ms
-                // error - timed-out waiting for TX
-                _pullUp();
-                error = 0x50 | i<<1;
-                return 0;
-              }
-            }
-  
-            // Check if TX is pulling line Up or Actively drives it High
-            _pullDown();
-            __builtin_avr_delay_cycles(2);
-            if (_isLineLow()) {
-              // TX is driving line via PullUp (end of packet)
-              _pullUp();
-              error = 0;
-              return res;
-            }
-            res <<= 1;
-            res |= 1;
-  
-            // Waiting for line to become Low
-            //t1 = 0;
-            start=TCNT1L;
-            while (_isLineHigh()) {
-              /*if (TIFR0 & (1 << TOV0)) {
-                TIFR0 = (1 << TOV0);
-                t1++;
-                if (t1 == 0) { // 256*1.024ms = ~262ms
-                  // error - timed-out waiting for TX
-                  _pullUp();
-                  error = 0x51 | i<<1;
-                  return 0;
-                }
-              }*/
-              if (TCNT1L - start > 16) { // every Timer1 tick is 64uS, here we wait for around 1024uS
-                // error - timed-out waiting for TX
-                _pullUp();
-                error = 0x51 | i<<1;
-                return 0;
-              }
-            }
-  
-            // Check if TX is pulling line Up or Actively drives it Low
-            _pullUp();
-            __builtin_avr_delay_cycles(2);
-            if (_isLineHigh()) {
-              // TX is driving line via PullUp (end of packet)
-              _pullUp();
-              error = 0;
-              return res;
-            }
-            res <<= 1;
-            
-          }
+          
+          res++;
+          
         }
         
-        _pullUp();
-        error = 0xE1;
-        return 0;
+        error = 0x3;
+        return res;
       }
 
       /**
        * error:
-       *   0x1x - readPacket error
-       *   0x2x - packet is not 0 or 1
+       *   0x1x - readPacket error; x - at which bit error happened
+       *   0x2x - packet is nor 0 nor 1; x - at which bit error happened
        */
       static inline uint8_t _readByte(uint8_t &error) {
         error = 0xFF;
         uint8_t res = 0;
         for (uint8_t bitNo = 0; bitNo < 8; bitNo++) {
-          uint8_t e = 0;
-          uint16_t p = _readPacket(e);
-          if (e != 0) {
-            error = 0x10|bitNo;
-            return 0;
+          _pullDown(); // make sure pull-down is active
+          __builtin_avr_delay_cycles(2);
+          uint8_t err = 0;
+          uint8_t p = _readPacket(err);
+          if (err != 0) {
+            error = 0x10 | bitNo; return res;
           }
           res >>= 1;
           if (p == _PACKET_1) {
             res |= 0x80;
           } else if (p == _PACKET_0) {
           } else {
-            error = 0x20|bitNo;
-            return 0;
+            error = 0x20 | bitNo; return res;
           }
         }
-        error = 0;
-        return res;
+        error = 0; return res;
       }
 
       static bool _writeByte(uint8_t d, uint8_t &error) {
         error = 0xFF;
-        uint8_t e = 0;
+        uint8_t err = 0;
         
         for (uint8_t bitNo = 0; bitNo < 8; bitNo++) {
-          ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-            uint16_t p = _readPacket(e);
-            if (e != 0) {
-              error = 0x10|bitNo;
-              return false;
-            }
-            if (p != _PACKET_READ_REQ) {
-              error = 0x20|bitNo;
-              return false;
-            }
-            if (d & 1) {
-              _pullUp();
-              // FIXME wait for LU confirmation
-            } else {
-              _pullDown();
-              // FIXME wait for HU confirmation
-            }
-            d>>=1;
+          _pullDown(); // make sure pull-down is active
+          __builtin_avr_delay_cycles(2);
+          uint8_t p = _readPacket(err);
+          if (err != 0) {
+            error = 0x10 | bitNo; return false;
           }
+          if (p != _PACKET_READ_REQ) {
+            error = 0x20 | bitNo; return false;
+          }
+          if (d & 1) {
+            _pullUp();
+            // FIXME wait for LU confirmation
+          } else {
+            _pullDown();
+            // FIXME wait for HU confirmation
+          }
+          d>>=1;
         }
         
-        error = 0;
-        return true;
+        error = 0; return true;
       }
 
-      static bool _waitForHandshake() {
-        uint8_t start = 0;
-        _setupTimer1();
-        TIFR1 = (1 << TOV1); // clear Tmr1 Overflow flag
-        while (start < HANDSHAKE_TIMEOUT_TMR1_OVERFLOWS) {
-          uint8_t err = 0;
-          uint16_t res = _readPacket(err);
-          if (err == 0 && res == _PACKET_HANDSHAKE) {
-            return true;
+      // errors:
+      //    0 - no error
+      //    0x1x - timed-out in the middle of handshake
+      //    0x2x - wrong packet (not handshake)
+      //    0x3x - reading packet error
+      //    0xFF - unhandled error
+      static bool _waitForHandshake(uint8_t &error) {
+        error = 0xFF; // Unhandled error
+        
+        uint8_t err = 0;
+        uint8_t res = _readPacket(err);
+        if (err == 0 && res == _PACKET_HANDSHAKE) {
+          error = 0; return true;
+
+        } else if (err == _READ_PACKET_ERR_TMOUT) {
+          if (res == 0) {
+            // timed-out at first transition - no TX activity yet
+            error = 0; return false;
+          } else {
+            // timed-out in the middle of handshake - error
+            error = 0x10 | res; return false;
           }
-          if (TIFR1 & (1 << TOV1)) {
-            TIFR1 = (1 << TOV1); // clear Tmr1 Overflow flag
-            start++;
+
+        } else {
+          // error reading packet
+          if (err == 0) {
+            error = 0x20 | res;
+          } else {
+            error = 0x30 | err;
           }
+          return false;
         }
-        return false;
       }
 
       static bool _isReceivedData;
       static uint8_t _receivedDataLength;
       static bool _isPrevTransmissionFailed;
       static bool _isPrevPrevTransmissionFailed;
-      static uint8_t _receivedData[34]; // sys byte + data + crc
-      
-    public:
+      static uint8_t _receivedData[34]; // sys byte + data[1~32] + crc
 
-      static void setup() {
-        _init();
-        _isReceivedData = false;
-      }
-      
-      static bool readFrame(uint8_t cmd) {
+      static bool __readFrame(uint8_t cmd, uint8_t &error) {
+        error = 0xFF; // Unhandled error
+        
         _isReceivedData = false;
         for (uint8_t i = 0; i < 34; i++) {
           _receivedData[i] = 0;
         }
         
+        _setupTimer1();
+          
         ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-          if (!_waitForHandshake()) {
-            return false;
+          
+          if (_isPullDownEnabled()) {
+            // Algorithm error!
+            error = 0x11; return false;
+          }
+          if (_isLineLow()) {
+            // Line is LOW - expected to be HIGH
+            error = 0x12; return false;
+          }
+          _pullDown(); // starting by pulling line down - to indicate TX that RX is ready
+          __builtin_avr_delay_cycles(2);
+          
+          uint8_t err = 0;
+          if (!_waitForHandshake(err)) {
+            _pullUp(); // FIXME Consider scenario: What if TX wakes-up right before we pull up? Likelihood is extremely low
+            error = err; return false; // if err == 0 => just timed-out; we can restart it later again
           }
           
-          uint8_t e = 0;
-
           // Read Sys Byte
-          _receivedData[0] = _readByte(e);
-          if (e != 0) {
-            return false;
+          _receivedData[0] = _readByte(err);
+          if (err != 0) {
+            error = 0x20; return false;
           }
 
           _receivedDataLength = (_receivedData[0] & 0x1F) + 1; // 0 means 1 byte, 1 -> 2, ... 31 -> 32
@@ -324,15 +358,17 @@ namespace pvt::toolkit::debug::rx::v2 {
           
           // Read Data + CRC
           for (uint8_t i = 1; i < _receivedDataLength + 2; i++) {
-            _receivedData[i] = _readByte(e);
-            if (e != 0) {
-              return false;
+            _receivedData[i] = _readByte(err);
+            if (err != 0) {
+              error = 0x40|i; return false;
             }
           }
           
+          _pullUp(); // suspend transmission (checking crc before continuing writing)
+          
           uint8_t crc = pvt::CRC8::calculate(_receivedData, _receivedDataLength + 1);
           if (crc != _receivedData[_receivedDataLength + 1]) {
-            return false;
+            error = 0x70; return false;
           }
 
           // FIXME Implement change in protocol: TX should hold and wait for RX to 
@@ -343,10 +379,27 @@ namespace pvt::toolkit::debug::rx::v2 {
           //if (!res || e != 0) {
           //  return false;
           //}
+          
+          _pullUp(); // end transmission
         }
         
         _isReceivedData = true;
         return true;
+      }
+      
+    public:
+
+      static void setup() {
+        _init();
+        _isReceivedData = false;
+      }
+      
+      static bool readFrame(uint8_t cmd, uint8_t &error) {
+        bool r = __readFrame(cmd, error);
+        if (!r) {
+          _pullUp();
+        }
+        return r;
       }
 
       static bool isReceivedData() {

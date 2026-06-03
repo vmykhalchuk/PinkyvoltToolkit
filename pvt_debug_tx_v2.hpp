@@ -321,10 +321,11 @@ namespace pvt::toolkit::debug::tx::v2 {
       }
 
       static void setup() {
+        // FIXME Validate if TIMER0 is configured as regular (prescaler=64 @ 16MHz speed && is enabled)
         {
-        setDPinToHigh();
-        setDPinToInput();
-        //_currTXMode = _PU;
+          setDPinToHigh();
+          setDPinToInput();
+          //_currTXMode = _PU;
         }
         _waitFullCycleAndSwitchToLH(_SPEC__WAITING_FOR_HANDSHAKE, _NOOP);
       }
@@ -538,6 +539,7 @@ namespace pvt::toolkit::debug::tx::v2 {
                                                                             // A: TX should expect either state - H - wait; L - start handshake
         
           // Done writing - switching to Waiting for handshake
+          _whenStallRevertTo = _CRIT__COMMERROR;
           _waitFullCycleAndSwitchToLH(_SPEC__WAITING_FOR_HANDSHAKE, _SPEC__WAITING_FOR_HANDSHAKE);
           
         } else {
