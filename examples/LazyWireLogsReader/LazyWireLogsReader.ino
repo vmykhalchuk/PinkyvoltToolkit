@@ -1,13 +1,14 @@
 #include <pvt_debug.hpp>
 
-constexpr uint8_t PORT_D_LINE_PIN_NO = 5; // 0..7 Pin on PortD
-constexpr uint8_t PORT_D_PULL_PIN_NO = 6; // 0..7 Pin on PortD
+constexpr uint8_t PORT_D_LINE_PIN_NO = 3; // 0..7 Pin on PortD
+constexpr uint8_t PORT_D_PULL_PIN_NO = 5; // 0..7 Pin on PortD
 
 using ErrorRx = pvt::ErrorReceiver<PORT_D_LINE_PIN_NO, PORT_D_PULL_PIN_NO>;
 
 void setup() {
   Serial.begin(9600);
   Serial.println("Test sketch to read LazyWire");
+  delay(1000);
   ErrorRx::setup();
 }
 
