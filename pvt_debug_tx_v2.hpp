@@ -175,24 +175,24 @@ namespace pvt::toolkit::debug::tx::v2 {
       }
 
       // Set D<PORTD_PIN> To Output (1 cycle)
-      inline static void setDPinToOutput() { asm volatile ("sbi %0, %1" : : "I" (_SFR_IO_ADDR(DDRD)), "I" (PORTD_PIN) : "memory"); }
+      inline static void _setDPinToOutput() { asm volatile ("sbi %0, %1" : : "I" (_SFR_IO_ADDR(DDRD)), "I" (PORTD_PIN) : "memory"); }
 
       // Set D<PORTD_PIN> To Output (1 cycle)
-      inline static void setDPinToInput() { asm volatile ("cbi %0, %1" : : "I" (_SFR_IO_ADDR(DDRD)), "I" (PORTD_PIN) : "memory"); }
+      inline static void _setDPinToInput() { asm volatile ("cbi %0, %1" : : "I" (_SFR_IO_ADDR(DDRD)), "I" (PORTD_PIN) : "memory"); }
 
       // Set D<PORTD_PIN> HIGH (1 cycle) 
-      inline static void setDPinToHigh() { asm volatile ("sbi %0, %1" : : "I" (_SFR_IO_ADDR(PORTD)), "I" (PORTD_PIN) : "memory"); }
+      inline static void _setDPinToHigh() { asm volatile ("sbi %0, %1" : : "I" (_SFR_IO_ADDR(PORTD)), "I" (PORTD_PIN) : "memory"); }
 
       // Set D<PORTD_PIN> LOW (1 cycle)
-      inline static void setDPinToLow() { asm volatile ("cbi %0, %1" : : "I" (_SFR_IO_ADDR(PORTD)), "I" (PORTD_PIN) : "memory"); }
+      inline static void _setDPinToLow() { asm volatile ("cbi %0, %1" : : "I" (_SFR_IO_ADDR(PORTD)), "I" (PORTD_PIN) : "memory"); }
 
       // Toggle D<PORTD_PIN> (1 cycle)
       // Writing a 1 to the PIN register toggles the PORT bit
-      inline static void toggleDPinState() { asm volatile ("sbi %0, %1" : : "I" (_SFR_IO_ADDR(PIND)), "I" (PORTD_PIN) : "memory"); }
+      inline static void _toggleDPinState() { asm volatile ("sbi %0, %1" : : "I" (_SFR_IO_ADDR(PIND)), "I" (PORTD_PIN) : "memory"); }
 
-      inline static bool isDPinHigh() { return PIND & _MASK; }
+      inline static bool _isDPinHigh() { return PIND & _MASK; }
 
-      inline static bool isDPinLow() { return !(PIND & _MASK); }
+      inline static bool _isDPinLow() { return !(PIND & _MASK); }
 
       enum TXMode : uint8_t {
         __Z, //00
@@ -217,85 +217,85 @@ namespace pvt::toolkit::debug::tx::v2 {
             _switchToLH(_CRIT__ALG_ERROR_TXOUT,_CRIT__ALG_ERROR_TXOUT);
             break;
           case 1: // toggle pin
-            toggleDPinState();
+            _toggleDPinState();
             break;
           case 2: // set as input
-            setDPinToInput();
+            _setDPinToInput();
             break;
           case 3: // set as output
-            setDPinToOutput();
+            _setDPinToOutput();
             break;
         }
 
         _currTXMode = changeTo;
       }*/
 
-      inline static TXMode getTx() {
+      inline static TXMode _getTx() {
         uint8_t dir = ((DDRD >> PORTD_PIN) & 1) << 1;
         uint8_t state = ((PORTD >> PORTD_PIN) & 1);
         return (TXMode)(dir|state);
       }
 
       inline static void _tx_debug(int code) {
-        Serial.print("Wrong initial state: "); Serial.print(getTx()); Serial.print(". Transition code: "); Serial.println(code, HEX);
+        Serial.print("Wrong initial state: "); Serial.print(_getTx()); Serial.print(". Transition code: "); Serial.println(code, HEX);
         delay(1000);
       }
 
       inline static void _tx_Z2PU() {
-        if (__debug && (getTx() != __Z)) {
+        if (__debug && (_getTx() != __Z)) {
           _tx_debug(1); return;
         }
-        toggleDPinState();
+        _toggleDPinState();
       }
       inline static void _tx_Z2AL() {
-        if (__debug && (getTx() != __Z)) {
+        if (__debug && (_getTx() != __Z)) {
           _tx_debug(2); return;
         }
-        setDPinToOutput();
+        _setDPinToOutput();
       }
-      //inline static void tx_Z2AH() IMPOSSIBLE With single transition
+      //inline static void _tx_Z2AH() IMPOSSIBLE With single transition
       
       inline static void _tx_PU2Z() {
-        if (__debug && (getTx() != _PU)) {
+        if (__debug && (_getTx() != _PU)) {
           _tx_debug(3); return;
         }
-        toggleDPinState();
+        _toggleDPinState();
       }
       inline static void _tx_PU2AH() {
-        if (__debug && (getTx() != _PU)) {
+        if (__debug && (_getTx() != _PU)) {
           _tx_debug(4); return;
         }
-        setDPinToOutput();
+        _setDPinToOutput();
       }
-      //inline static void tx_PU2AL() IMPOSSIBLE With single transition
+      //inline static void _tx_PU2AL() IMPOSSIBLE With single transition
 
       inline static void _tx_AL2Z() {
-        if (__debug && (getTx() != _AL)) {
+        if (__debug && (_getTx() != _AL)) {
           _tx_debug(5); return;
         }
-        setDPinToInput();
+        _setDPinToInput();
       }
       inline static void _tx_AL2AH() {
-        if (__debug && (getTx() != _AL)) {
+        if (__debug && (_getTx() != _AL)) {
           _tx_debug(6); return;
         }
-        toggleDPinState();
+        _toggleDPinState();
       }
-      //inline static void tx_AL2PU() IMPOSSIBLE With single transition
+      //inline static void _tx_AL2PU() IMPOSSIBLE With single transition
 
       inline static void _tx_AH2PU() {
-        if (__debug && (getTx() != _AH)) {
+        if (__debug && (_getTx() != _AH)) {
           _tx_debug(7); return;
         }
-        setDPinToInput();
+        _setDPinToInput();
       }
       inline static void _tx_AH2AL() {
-        if (__debug && (getTx() != _AH)) {
+        if (__debug && (_getTx() != _AH)) {
           _tx_debug(8); return;
         }
-        toggleDPinState();
+        _toggleDPinState();
       }
-      //inline static void tx_AH2Z() IMPOSSIBLE With single transition
+      //inline static void _tx_AH2Z() IMPOSSIBLE With single transition
       
 
       static volatile uint8_t _data[SIZE + _SYS_BYTES];
@@ -307,29 +307,29 @@ namespace pvt::toolkit::debug::tx::v2 {
 
     public:
 
-      static void registerError(uint8_t errorFlag) {
-        // TODO Make this operation atomic
-        //    +1) Suspend interrupts
-        //     2) ignore it - since we are setting bit - set after set => same result
-        //     3) [BEST] make it configurable (one of above three solutions)
-        ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { // FIXME use template boolean to either make class therad-safe or not (for advanced users - no need in these additional locks)
-                                            // simply implement if (THREAD_SAFE_ENABLED) _registerErrorThreadSafe(errorFlag) else _registerError(errorFlag);
-                                            // _registerErrorThreadSafe() utilizes _registerError() but also has this ATOMIC_BLOCK
-                                            // Do that for all methods that access shared variables
-          _data[errorFlag>>3] |= 1 << (errorFlag & 0x7);
-        }
-      }
-
+      // FIXME Define first step to be some kind of SETUP - to remove user-mandated setup() method
       static void setup() {
         // FIXME Validate if TIMER0 is configured as regular (prescaler=64 @ 16MHz speed && is enabled)
         {
-          setDPinToHigh();
-          setDPinToInput();
+          _setDPinToHigh();
+          _setDPinToInput();
           //_currTXMode = _PU;
         }
         _waitFullCycleAndSwitchToLH(_SPEC__WAITING_FOR_HANDSHAKE, _NOOP);
       }
 
+      static void setErrorFlag(uint8_t flagNo) {
+        // TODO Make this operation atomic
+        //    +1) Suspend interrupts
+        //     2) ignore it - since we are setting bit - set after set => same result
+        //     3) [BEST] make it configurable (one of above three solutions)
+        ATOMIC_BLOCK(ATOMIC_RESTORESTATE) { // FIXME use template boolean to either make class thread-safe or not (for advanced users - no need in these additional locks)
+                                            // simply implement if (THREAD_SAFE_ENABLED) _setErrorFlagThreadSafe(flagNo) else _setErrorFlag(flagNo);
+                                            // _setErrorFlagThreadSafe() utilizes _setErrorFlag() but also has this ATOMIC_BLOCK
+                                            // Do that for all methods that access shared variables
+          _data[flagNo>>3] |= 1 << (flagNo & 0x7);
+        }
+      }
 
       static void tick() {
         // Handle most common step first (Skip Full Cycle : meaning wait minimum 4uS)
@@ -343,7 +343,7 @@ namespace pvt::toolkit::debug::tx::v2 {
             }
           }
         } else {
-          bool isLow = isDPinLow();
+          bool isLow = _isDPinLow();
           // Waiting for Handshake is second most common step : checking it before all else
           // NB: Only _SPEC__WAITING_FOR_HANDSHAKE will not trigger SPL, no need to maintaint SPL here
           if (_if_L_then == _SPEC__WAITING_FOR_HANDSHAKE) {
@@ -640,7 +640,6 @@ namespace pvt::toolkit::debug::tx::v2 {
   template <uint8_t P, uint8_t S>
   uint8_t OneWireErrorTransmitter<P, S>::_skipCycleTmr0p1 = 0;
 
-  // FIXME Define first steps to be some kind of SETUP - to remove user-mandated setup() method
   template <uint8_t P, uint8_t S>
   typename OneWireErrorTransmitter<P, S>::FSMState OneWireErrorTransmitter<P, S>::_if_L_then = OneWireErrorTransmitter<P, S>::_NOOP;
   template <uint8_t P, uint8_t S>
