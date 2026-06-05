@@ -21,10 +21,34 @@ Constraints on Main MCU side, we will call it Transmitter:
 Constraints on Receiver side:
   - Timing constraints:
     - Receiver on contrary must dedicate all resources to monitor and instantly act.
-    - Receiver can pull line down (via 300 Ohm resistor). Or pull line up via same resistor.
+    - Receiver can pull line down (via 2200 Ohm resistor). Or pull line up via same resistor.
   - It should use any hardware possible
   - It's main goal is to responde to Transmitter as soon as possible
   - It must act within 1.5uS
+
+Other:
+  - Main MCU exposes it's debug line via 220 Ohm resistor to prevent it from shorting to VCC or GND.
+
+
+#### Circuit
+```
+                                                                    RX
+                                                   2200 Ohm     *-----------*
+                                                 *---------*    |           |
+   Main (TX)                                +----+         +----+ LINE      |
+  *--------*                                |    *---------*    |           |
+  |        |   220 Ohm                      |                   |           |
+  |        |  *-------*                     |                   |           |
+  |   LINE +--+       +---------------------+                   |           |
+  |        |  *-------*                     |                   |           |
+  |        |                                +-------------------+ PULL      |
+  |        |                                                    |           |
+  |        |                                                    |           |
+  *--------*                                                    *-----------*
+
+```
+
+
 
 --------
 

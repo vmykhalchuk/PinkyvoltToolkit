@@ -160,6 +160,11 @@ namespace pvt::toolkit::debug::tx::v2 {
       static FSMState _if_L_then__saved4waitFullCycle;
       
       inline static void _waitFullCycleAndSwitchToLH(FSMState if_L_then, FSMState if_H_then) {
+        if (__debug) {
+          Serial.print("WaitFC:"); Serial.print(if_L_then, HEX); Serial.print(':'); Serial.println(if_H_then,HEX);
+          delay(1000);
+        }
+        
         _if_L_then = _SPEC__SKIP_FULL_CYCLE;
         _if_L_then__saved4waitFullCycle = if_L_then;
         _if_H_then = if_H_then;
@@ -170,6 +175,10 @@ namespace pvt::toolkit::debug::tx::v2 {
       }
       
       inline static void _switchToLH(FSMState if_L_then, FSMState if_H_then) {
+        if (__debug) {
+          Serial.print("Switch:"); Serial.print(if_L_then, HEX); Serial.print(':'); Serial.println(if_H_then,HEX);
+          delay(1000);
+        }
         _if_L_then = if_L_then;
         _if_H_then = if_H_then;
       }
@@ -375,7 +384,7 @@ namespace pvt::toolkit::debug::tx::v2 {
       // Helping methods to let TX device free line, and freely go to long slumber. First disable communication, than run as many times `tick()` as needed, till isCommunicating() returns false
       static void enableCommunication() {}; // FIXME Implement
       static void disableCommunication() {}; // FIXME Implement
-      static bool isCommunicating() { return false; }; // FIXME Implement
+      static bool isCommunicating() { return true; }; // FIXME Implement
 
     private:
 
@@ -384,7 +393,7 @@ namespace pvt::toolkit::debug::tx::v2 {
       static uint8_t _stallCounter;
 
       inline static void __resetStallPreventionLogic() {
-        // FIXME [PERFROMANCE] We might remove these variables, and leave only counter
+        // FIXME [PERFORMANCE] We might remove these variables, and leave only counter
         //      all we have to do - is add a call to this function from `_switchToLH()` and `_waitFullCycleAndSwitchToLH()`
         _stallStateIfL = _if_L_then;
         _stallStateIfH = _if_H_then;
