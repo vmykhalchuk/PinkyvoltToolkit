@@ -1,0 +1,13 @@
+Test sketch to read LazyWire
+Error: 0xFF
+No new Date. Strange Error :(
+ReceivedLength: 3
+Data[0]=0x22
+Error: 0xFF
+No new Date. Strange Error :(
+ReceivedLength: 3
+Data[0]=0x0
+Error: 0xFF
+No new Date. Strange Error :(
+ReceivedLength: 3
+Data[0]=0x0

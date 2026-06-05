@@ -17,7 +17,7 @@ void loop() {
   if (ErrorRx::readFrame(0x31, err)) {
     Serial.print("Error: 0x"); Serial.println(err, HEX);
     if (ErrorRx::isReceivedData()) {
-      Serial.println("No new Date. Strange Error :(");
+      Serial.println("No new Data. Strange Error :(");
     }
     Serial.print("ReceivedLength: "); Serial.println(ErrorRx::getReceivedLength());
     Serial.print("Data[0]=0x"); Serial.println(ErrorRx::getDataByte(0), HEX);
