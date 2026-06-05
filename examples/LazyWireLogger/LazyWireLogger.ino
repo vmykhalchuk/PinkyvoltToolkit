@@ -20,7 +20,7 @@ void loop() {
   ErrorTx::tick();
   uint8_t commErr = ErrorTx::getCommunicationError();
   if (commErr != 0) {
-    Serial.print("CommErr: 0x"); Serial.println(commErr, HEX);
+    Serial.print("               !!! CommErr: 0x"); Serial.println(commErr, HEX);
   }
   // random delay will not hinder communication
   int randomNumber = random(1, 101);

@@ -125,7 +125,6 @@ namespace pvt::toolkit::debug::tx::v2 {
         _HS__S4                             = _G_HS | 4,
         _HS__S5                             = _G_HS | 5,
         _HS__S6                             = _G_HS | 6,
-        _HS__S7                             = _G_HS | 7,
 
         // -- WRITING --
         _WR_START                           = _G_WR | 0,
@@ -161,8 +160,8 @@ namespace pvt::toolkit::debug::tx::v2 {
       
       inline static void _waitFullCycleAndSwitchToLH(FSMState if_L_then, FSMState if_H_then) {
         if (__debug) {
-          Serial.print("WaitFC:"); Serial.print(if_L_then, HEX); Serial.print(':'); Serial.println(if_H_then,HEX);
-          delay(1000);
+          Serial.print("WtLH:"); Serial.print(if_L_then, HEX); Serial.print(':'); Serial.println(if_H_then,HEX);
+          delay(300);
         }
         
         _if_L_then = _SPEC__SKIP_FULL_CYCLE;
@@ -176,8 +175,8 @@ namespace pvt::toolkit::debug::tx::v2 {
       
       inline static void _switchToLH(FSMState if_L_then, FSMState if_H_then) {
         if (__debug) {
-          Serial.print("Switch:"); Serial.print(if_L_then, HEX); Serial.print(':'); Serial.println(if_H_then,HEX);
-          delay(1000);
+          Serial.print("SwLH:"); Serial.print(if_L_then, HEX); Serial.print(':'); Serial.println(if_H_then,HEX);
+          delay(300);
         }
         _if_L_then = if_L_then;
         _if_H_then = if_H_then;
@@ -246,7 +245,7 @@ namespace pvt::toolkit::debug::tx::v2 {
       }
 
       inline static void _tx_debug(int code) {
-        Serial.print("Wrong initial state: "); Serial.print(_getTx()); Serial.print(". Transition code: "); Serial.println(code, HEX);
+        Serial.print("!!! Wrong initial state: "); Serial.print(_getTx()); Serial.print(". Transition code: "); Serial.println(code, HEX);
         delay(1000);
       }
 
@@ -307,7 +306,7 @@ namespace pvt::toolkit::debug::tx::v2 {
       //inline static void _tx_AH2Z() IMPOSSIBLE With single transition
       
 
-      static volatile uint8_t _data[SIZE + _SYS_BYTES];
+      static volatile uint8_t _data[SIZE];
       static volatile uint8_t _commError;
 
       static uint8_t _writingData[SIZE + _SYS_BYTES];
@@ -328,6 +327,8 @@ namespace pvt::toolkit::debug::tx::v2 {
       }
 
       static void setErrorFlag(uint8_t flagNo) {
+        uint8_t dataByteNo = flagNo>>3;
+        if (dataByteNo >= SIZE) return;
         // TODO Make this operation atomic
         //    +1) Suspend interrupts
         //     2) ignore it - since we are setting bit - set after set => same result
@@ -336,7 +337,7 @@ namespace pvt::toolkit::debug::tx::v2 {
                                             // simply implement if (THREAD_SAFE_ENABLED) _setErrorFlagThreadSafe(flagNo) else _setErrorFlag(flagNo);
                                             // _setErrorFlagThreadSafe() utilizes _setErrorFlag() but also has this ATOMIC_BLOCK
                                             // Do that for all methods that access shared variables
-          _data[flagNo>>3] |= 1 << (flagNo & 0x7);
+          _data[dataByteNo] |= 1 << (flagNo & 0x7);
         }
       }
 
@@ -628,13 +629,16 @@ namespace pvt::toolkit::debug::tx::v2 {
             _writingData[i+1] = _data[i];
             _data[i] = 0;
           }
-          _writingData[SIZE + 1] = CRC8::calculate(_writingData, 1 + SIZE); // SYS Byte + Data
         }
+        uint8_t sysByte = (SIZE - 1);
+        // FIXME set 0x40 0x20 flags (marking latest failures if present)
+        _writingData[0] = sysByte;
+        _writingData[SIZE + 1] = CRC8::calculate(_writingData, 1 + SIZE); // SYS Byte + Data
       }
   
       inline static void _recoverDataBack() {
         ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-          for (uint8_t i = 0; i < SIZE; i++) {
+          for (uint8_t i = 1; i < 1 + SIZE; i++) { // We skip SYS Byte and CRC Byte
             // We recover back with assumption that data is set of flags. All flags that were set before are kept as is
             _data[i] |= _writingData[i];
             // FIXME Consider if above logic is right, maybe make it configurable (if user do not wants it to be flags only)
@@ -657,7 +661,7 @@ namespace pvt::toolkit::debug::tx::v2 {
   typename OneWireErrorTransmitter<P, S>::FSMState OneWireErrorTransmitter<P, S>::_if_L_then__saved4waitFullCycle = OneWireErrorTransmitter<P, S>::_NOOP;
 
   template <uint8_t P, uint8_t S>
-  volatile uint8_t OneWireErrorTransmitter<P, S>::_data[S + OneWireErrorTransmitter<P, S>::_SYS_BYTES] = {};
+  volatile uint8_t OneWireErrorTransmitter<P, S>::_data[S] = {};
   template <uint8_t P, uint8_t S>
   volatile uint8_t OneWireErrorTransmitter<P, S>::_commError = CMERR__OK;
 
