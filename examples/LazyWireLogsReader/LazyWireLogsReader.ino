@@ -13,16 +13,19 @@ void setup() {
 }
 
 void loop() {
-  uint8_t err = 0xCC;
-  bool receivedFrame = ErrorRx::readFrame(0x31, err);
+  uint8_t err = 0xCC, lastReadByteError = 0xCD;
+  bool receivedFrame = ErrorRx::readFrame(0x31, err, lastReadByteError);
   if (err != 0) {
     Serial.print("Error: 0x"); Serial.println(err, HEX);
   }
+  if (lastReadByteError != 0) {
+    Serial.print("LRB Error: 0x"); Serial.println(lastReadByteError, HEX);
+  }
   if (receivedFrame) {
-    Serial.print("ReceivedLength: "); Serial.println(ErrorRx::getReceivedLength());
-    Serial.print("Data[0]=0x"); Serial.println(ErrorRx::getDataByte(0), HEX);
-    Serial.print("Data[1]=0x"); Serial.println(ErrorRx::getDataByte(1), HEX);
-    Serial.print("Data[2]=0x"); Serial.println(ErrorRx::getDataByte(2), HEX);
+    Serial.print("  ReceivedLength: "); Serial.println(ErrorRx::getReceivedLength());
+    Serial.print("  Data[0]=0x"); Serial.println(ErrorRx::getDataByte(0), HEX);
+    Serial.print("  Data[1]=0x"); Serial.println(ErrorRx::getDataByte(1), HEX);
+    Serial.print("  Data[2]=0x"); Serial.println(ErrorRx::getDataByte(2), HEX);
   }
   delay(2000);
 }

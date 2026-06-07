@@ -318,7 +318,7 @@ namespace pvt::toolkit::debug::rx::v2 {
       static bool _isPrevPrevTransmissionFailed;
       static uint8_t _receivedData[34]; // sys byte + data[1~32] + crc
 
-      static bool __readFrame(uint8_t cmd, uint8_t &error) {
+      static bool __readFrame(uint8_t cmd, uint8_t &error, uint8_t &lastReadByteError) {
         error = 0xFF; // Unhandled error
         
         _isReceivedData = false;
@@ -348,8 +348,8 @@ namespace pvt::toolkit::debug::rx::v2 {
           }
           
           // Read Sys Byte
-          _receivedData[0] = _readByte(err);
-          if (err != 0) {
+          _receivedData[0] = _readByte(lastReadByteError);
+          if (lastReadByteError != 0) {
             error = 0x20; return false;
           }
 
@@ -359,8 +359,8 @@ namespace pvt::toolkit::debug::rx::v2 {
           
           // Read Data + CRC
           for (uint8_t i = 1; i < _receivedDataLength + 2; i++) {
-            _receivedData[i] = _readByte(err);
-            if (err != 0) {
+            _receivedData[i] = _readByte(lastReadByteError);
+            if (lastReadByteError != 0) {
               error = 0x40|i; return false;
             }
           }
@@ -406,9 +406,9 @@ namespace pvt::toolkit::debug::rx::v2 {
         _isReceivedData = false;
       }
       
-      static bool readFrame(uint8_t cmd, uint8_t &error) {
-        bool r = __readFrame(cmd, error);
-        if (!r) {
+      static bool readFrame(uint8_t cmd, uint8_t &error, uint8_t &lastReadByteError) {
+        bool r = __readFrame(cmd, error, lastReadByteError);
+        if (true/*!r*/) {
           _pullUp();
         }
         return r;
