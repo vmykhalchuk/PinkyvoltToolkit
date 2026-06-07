@@ -158,6 +158,7 @@ namespace pvt::toolkit::debug::rx::v2 {
       static constexpr uint16_t _PACKET_1         = 1; // HU
       static constexpr uint16_t _PACKET_0         = 2; // HLU
       static constexpr uint16_t _PACKET_READ_REQ  = 3; // HLHU
+      static constexpr uint16_t _PACKET_FRAME_OVER= 1; // HU
 
       /**
        * returns one of packets:
@@ -364,6 +365,17 @@ namespace pvt::toolkit::debug::rx::v2 {
             }
           }
           
+          // Read Enf Of Transmission (HU)
+          _pullDown(); // make sure pull-down is active
+          __builtin_avr_delay_cycles(2);
+          uint8_t p = _readPacket(err);
+          if (err != 0) {
+            error = 0x51; return false;
+          }
+          if (p != _PACKET_FRAME_OVER) {
+            error = 0x52; return false;
+          }
+          
           _pullUp(); // suspend transmission (checking crc before continuing writing)
           
           uint8_t crc = pvt::CRC8::calculate(_receivedData, _receivedDataLength + 1);
@@ -384,7 +396,7 @@ namespace pvt::toolkit::debug::rx::v2 {
         }
         
         _isReceivedData = true;
-        return true;
+        error = 0; return true;
       }
       
     public:

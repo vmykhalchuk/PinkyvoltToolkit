@@ -10,6 +10,7 @@ void setup() {
   ErrorTx::setup();
   
   ErrorTx::setErrorFlag(1);
+  ErrorTx::setErrorFlag(3);
   ErrorTx::setErrorFlag(5);
   ErrorTx::setErrorFlag(10);
 

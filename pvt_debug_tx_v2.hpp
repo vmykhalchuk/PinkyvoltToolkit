@@ -531,7 +531,7 @@ namespace pvt::toolkit::debug::tx::v2 {
         
         } else if (_WR_S3 == state) {           // Line == L (SPD+PU)
           _bitNo++;
-          if (_bitNo < ((SIZE+2)<<3)) {
+          if (_bitNo < ((SIZE+2)<<3)) { // FIXME We have hard limit here which is lower than 32, bitNo must be 16bit instead!
             _switchToLH(_WR_S0, _RD_ERROR);
           } else {
             // last bit was written - now TX should reply with `HU` to end transmission
@@ -638,9 +638,9 @@ namespace pvt::toolkit::debug::tx::v2 {
   
       inline static void _recoverDataBack() {
         ATOMIC_BLOCK(ATOMIC_RESTORESTATE) {
-          for (uint8_t i = 1; i < 1 + SIZE; i++) { // We skip SYS Byte and CRC Byte
+          for (uint8_t i = 0; i < SIZE; i++) {
             // We recover back with assumption that data is set of flags. All flags that were set before are kept as is
-            _data[i] |= _writingData[i];
+            _data[i] |= _writingData[1+i]; // We skip SYS Byte in _writingData
             // FIXME Consider if above logic is right, maybe make it configurable (if user do not wants it to be flags only)
           }
         }
@@ -683,7 +683,7 @@ namespace pvt::toolkit::debug::tx::v2 {
 
 
 /*
-          // TODO Clean-up below (Preserve skipTwoFullCycles)
+      // TODO Clean-up below (Preserve skipTwoFullCycles)
 
       uint8_t _skipCycleTmr0 = 0;
       uint8_t _skipCycleTmr0p1 = 0;
@@ -699,18 +699,18 @@ namespace pvt::toolkit::debug::tx::v2 {
         _skipCycleTmr0 = TCNT0;
       }
 
-          // Assures Receiver has min 8uS time to react (1 TCNT0 increment is 4uS)
-          case SKIP_TWO_FULL_CYCLES:
-            if (TCNT0 - _skipCycleTmr0 > 2) {
-              _state = _skipCycleReturnState; // done waiting
-            } else {
-              if (++_skipCycleCounter > 20) { // 20 * 10 instructions (less is physically impossible) = 200*62.5nS=12.5uS
-                // This is fall-back mechanism
-                // With 3 / 256 timer states - the chances are that some rhytmic calls will leave SM in this state for very long
-                _state = _skipCycleReturnState; // done waiting
-              }
-            }
-            break;
+      // Assures Receiver has min 8uS time to react (1 TCNT0 increment is 4uS)
+      case SKIP_TWO_FULL_CYCLES:
+        if (TCNT0 - _skipCycleTmr0 > 2) {
+          _state = _skipCycleReturnState; // done waiting
+        } else {
+          if (++_skipCycleCounter > 20) { // 20 * 10 instructions (less is physically impossible) = 200*62.5nS=12.5uS
+            // This is fall-back mechanism
+            // With 3 / 256 timer states - the chances are that some rhytmic calls will leave SM in this state for very long
+            _state = _skipCycleReturnState; // done waiting
+          }
+        }
+        break;
   
 */
 
