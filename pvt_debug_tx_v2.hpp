@@ -84,7 +84,7 @@ namespace pvt::toolkit::debug::tx::v2 {
   class OneWireErrorTransmitter final {
     
     private:
-      static constexpr bool __debug = true;
+      static constexpr bool __debug = false;
 
       static constexpr uint8_t _SYS_BYTES = 2; // FIXME Implement this! (See Receiver for details)
 
@@ -161,7 +161,7 @@ namespace pvt::toolkit::debug::tx::v2 {
       inline static void _waitFullCycleAndSwitchToLH(FSMState if_L_then, FSMState if_H_then) {
         if (__debug) {
           Serial.print("WtLH:"); Serial.print(if_L_then, HEX); Serial.print(':'); Serial.println(if_H_then,HEX);
-          delay(300);
+          delay(50);
         }
         
         _if_L_then = _SPEC__SKIP_FULL_CYCLE;

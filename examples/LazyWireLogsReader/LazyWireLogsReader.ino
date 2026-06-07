@@ -14,17 +14,15 @@ void setup() {
 
 void loop() {
   uint8_t err = 0xCC;
-  if (ErrorRx::readFrame(0x31, err)) {
-    if (err != 0) {
-      Serial.print("Error: 0x"); Serial.println(err, HEX);
-      if (ErrorRx::isReceivedData()) {
-        Serial.println("No new Data. Strange Error :(");
-      }
-    }
+  bool receivedFrame = ErrorRx::readFrame(0x31, err);
+  if (err != 0) {
+    Serial.print("Error: 0x"); Serial.println(err, HEX);
+  }
+  if (receivedFrame) {
     Serial.print("ReceivedLength: "); Serial.println(ErrorRx::getReceivedLength());
     Serial.print("Data[0]=0x"); Serial.println(ErrorRx::getDataByte(0), HEX);
-  } else {
-    Serial.println("Timedout. No new Frame");
+    Serial.print("Data[1]=0x"); Serial.println(ErrorRx::getDataByte(1), HEX);
+    Serial.print("Data[2]=0x"); Serial.println(ErrorRx::getDataByte(2), HEX);
   }
   delay(2000);
 }

@@ -23,10 +23,12 @@ void loop() {
   if (commErr != 0) {
     Serial.print("               !!! CommErr: 0x"); Serial.println(commErr, HEX);
   }
+  /*
   // random delay will not hinder communication
   int randomNumber = random(1, 101);
   delay(randomNumber);
   if (randomNumber % 9 == 0) {
-    delay(1000); // even these random long delays cannot hinder protocol
+    delay(200); // even these random long delays cannot hinder protocol
   }
+  */
 }
