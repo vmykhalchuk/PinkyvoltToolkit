@@ -238,14 +238,14 @@ namespace pvt::toolkit::debug::rx::v2 {
           uint8_t err = 0;
           uint8_t p = _readPacket(err);
           if (err != 0) {
-            error = 0x10 | bitNo; return res;
+            error = 0x00 | (bitNo<<4) | err; return res;
           }
           res >>= 1;
           if (p == _PACKET_1) {
             res |= 0x80;
           } else if (p == _PACKET_0) {
           } else {
-            error = 0x20 | bitNo; return res;
+            error = 0x80 | (bitNo<<4) | err; return res;
           }
         }
         error = 0; return res;
@@ -320,6 +320,7 @@ namespace pvt::toolkit::debug::rx::v2 {
 
       static bool __readFrame(uint8_t cmd, uint8_t &error, uint8_t &lastReadByteError) {
         error = 0xFF; // Unhandled error
+        lastReadByteError = 0xFE; // Unhandled error
         
         _isReceivedData = false;
         for (uint8_t i = 0; i < 34; i++) {
