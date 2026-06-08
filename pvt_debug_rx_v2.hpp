@@ -350,6 +350,8 @@ namespace pvt::toolkit::debug::rx::v2 {
           
           // Read Sys Byte
           _receivedData[0] = _readByte(lastReadByteError);
+          // FIXME We quite often get error lastReadByteError=0x80 - however if analyzing closer - it is caused by Handshake packet instead of 0/1 packet
+          //            Looks like some-times TX sends Handshake twice
           if (lastReadByteError != 0) {
             error = 0x20; return false;
           }

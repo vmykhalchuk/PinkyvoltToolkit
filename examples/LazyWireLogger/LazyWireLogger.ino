@@ -7,7 +7,6 @@ using ErrorTx = pvt::ErrorTransmitter<PORT_D_PIN_NO, 3>; // Pin 5; 3 bytes of da
 void setup() {
   Serial.begin(9600);
   Serial.println("Test sketch with LazyWire Logger enabled");
-  ErrorTx::setup();
   
   ErrorTx::setErrorFlag(1);
   ErrorTx::setErrorFlag(3);
@@ -23,12 +22,12 @@ void loop() {
   if (commErr != 0) {
     Serial.print("               !!! CommErr: 0x"); Serial.println(commErr, HEX);
   }
-  /*
+  
   // random delay will not hinder communication
-  int randomNumber = random(1, 101);
+  int randomNumber = random(1, 11);
   delay(randomNumber);
   if (randomNumber % 9 == 0) {
     delay(200); // even these random long delays cannot hinder protocol
+    // you can suspend it up to 20 seconds (if needed - more can be defined on Receiver side)
   }
-  */
 }

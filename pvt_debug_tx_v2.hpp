@@ -80,15 +80,15 @@ namespace pvt::toolkit::debug::tx::v2 {
                       //        10->set as input          11->set as output
   constexpr uint8_t _TRANSITION_MAP[] = {__Z_to__, _PU_to__, _AL_to__, _AH_to__};
 
-  template <uint8_t PORTD_PIN, uint8_t SIZE>
+  template <uint8_t PORTD_PIN, uint8_t SIZE, bool STALL_PREVENTION, bool DEBUG_ENABLED>
   class OneWireErrorTransmitter final {
     
     private:
-      static constexpr bool __debug = false;
+      static constexpr bool __debug = DEBUG_ENABLED;
 
       static constexpr uint8_t _SYS_BYTES = 2; // FIXME Implement this! (See Receiver for details)
 
-      static_assert(SIZE >=1 && SIZE <= 30, "SIZE must be in range [1..30]");
+      static_assert(SIZE >=1 && SIZE <= 29, "SIZE must be in range [1..29]");
       static_assert(((SIZE + _SYS_BYTES)<<3) <= 0xFF, "SIZE+sysBytes must be addressable with single byte");
 
       static_assert((PORTD_PIN <= 7), "PORTD_PIN must be within 0..7 range!");
@@ -98,10 +98,11 @@ namespace pvt::toolkit::debug::tx::v2 {
       static constexpr uint8_t _MASK = 1<<PORTD_PIN;
 
       enum FSMStateGroup : uint8_t {
-        _G_CRIT = 0x10,
-        _G_HS   = 0x20,
-        _G_WR   = 0x30,
-        _G_RD   = 0x40
+        _G_CRIT = 0x10, // Critical and oftenly active
+        _G_HS   = 0x20, // Handshake
+        _G_WR   = 0x30, // Writing
+        _G_RD   = 0x40, // Reading
+        _G_NC   = 0xC0  // Non Critical
       };
       
       enum FSMState : uint8_t {
@@ -145,6 +146,8 @@ namespace pvt::toolkit::debug::tx::v2 {
         _RD_S4_H                            = _G_RD | 5,
         _RD_S5                              = _G_RD | 6,
         _RD_ERROR                           = _G_RD | 7,
+        
+        _NC_SETUP                           = _G_NC | 0,
 
         _NOOP                               = 0xFF
       };
@@ -313,10 +316,8 @@ namespace pvt::toolkit::debug::tx::v2 {
       static uint8_t _readingData;
       static uint8_t _bitNo;
 
-    public:
-
-      // FIXME Define first step to be some kind of SETUP - to remove user-mandated setup() method
-      static void setup() {
+      __attribute__((always_inline))
+      inline static void __setup() {
         // FIXME Validate if TIMER0 is configured as regular (prescaler=64 @ 16MHz speed && is enabled)
         {
           _setDPinToHigh();
@@ -325,6 +326,8 @@ namespace pvt::toolkit::debug::tx::v2 {
         }
         _waitFullCycleAndSwitchToLH(_SPEC__WAITING_FOR_HANDSHAKE, _NOOP);
       }
+      
+    public:
 
       static void setErrorFlag(uint8_t flagNo) {
         uint8_t dataByteNo = flagNo>>3;
@@ -363,7 +366,9 @@ namespace pvt::toolkit::debug::tx::v2 {
               //        This can be remediated by adding additional pin to Receiver to sense voltage presence from TX, and set delay before starting any attempt to communicate.
               _waitFullCycleAndSwitchToLH(_HS__S1, _CRIT__COMMERROR);
               __resetStallPreventionLogic();
-              _whenStallRevertTo = _CRIT__COMMERROR;
+              if (STALL_PREVENTION) {
+                _whenStallRevertTo = _CRIT__COMMERROR;
+              }
             } else {
               // keep waiting
             }
@@ -394,6 +399,9 @@ namespace pvt::toolkit::debug::tx::v2 {
       static uint8_t _stallCounter;
 
       inline static void __resetStallPreventionLogic() {
+        if (!STALL_PREVENTION) {
+          return;
+        }
         // FIXME [PERFORMANCE] We might remove these variables, and leave only counter
         //      all we have to do - is add a call to this function from `_switchToLH()` and `_waitFullCycleAndSwitchToLH()`
         _stallStateIfL = _if_L_then;
@@ -403,16 +411,18 @@ namespace pvt::toolkit::debug::tx::v2 {
 
       __attribute__((always_inline))
       inline static void _handleLineStateChangeWithStallPrevention(bool isLow) {
-        // Stall Prevention Logic
-        //    When Receiver fails to respond, FSM will be reverted to `_whenStallRevertTo` state
-        if (_stallStateIfL == _if_L_then && _stallStateIfH == _if_H_then) {
-          if (++_stallCounter > 20) {
-            // Stalled
-            _commError |= CMERR__STALL;
-            _waitFullCycleAndSwitchToLH(_whenStallRevertTo, _whenStallRevertTo);
+        if (STALL_PREVENTION) {
+          // Stall Prevention Logic
+          //    When Receiver fails to respond, FSM will be reverted to `_whenStallRevertTo` state
+          if (_stallStateIfL == _if_L_then && _stallStateIfH == _if_H_then) {
+            if (++_stallCounter > 20) {
+              // Stalled
+              _commError |= CMERR__STALL;
+              _waitFullCycleAndSwitchToLH(_whenStallRevertTo, _whenStallRevertTo);
+            }
+          } else {
+            __resetStallPreventionLogic();
           }
-        } else {
-          __resetStallPreventionLogic();
         }
         
         _handleLineStateChange(isLow);
@@ -431,9 +441,11 @@ namespace pvt::toolkit::debug::tx::v2 {
           _handleWritingState(state);
         } else if (_G_RD == group) {
           _handleReadingState(state);
+        } else if (_G_NC == group) {
+          _handleNonCritState(state);
 
         } else {
-           _switchToLH(_CRIT__ALG_ERR__BAD_STATE, _CRIT__ALG_ERR__BAD_STATE);
+          _switchToLH(_CRIT__ALG_ERR__BAD_STATE, _CRIT__ALG_ERR__BAD_STATE);
         }
       }
 
@@ -488,7 +500,7 @@ namespace pvt::toolkit::debug::tx::v2 {
           _waitFullCycleAndSwitchToLH(_WR_START, _CRIT__COMMERROR); // TX is forced to wait 4uS minimum, only then check line
           
         } else {
-           _switchToLH(_CRIT__ALG_ERR__BAD_STATE, _CRIT__ALG_ERR__BAD_STATE);
+          _switchToLH(_CRIT__ALG_ERR__BAD_STATE, _CRIT__ALG_ERR__BAD_STATE);
         }
       }
 
@@ -503,7 +515,9 @@ namespace pvt::toolkit::debug::tx::v2 {
             _preserveWritingData(); // reset - if writing fails we revert _data with _writingData
           }
           _bitNo = 0; // start from bit 0
-          _whenStallRevertTo = _RD_ERROR;
+          if (STALL_PREVENTION) {
+            _whenStallRevertTo = _RD_ERROR;
+          }
           _switchToLH(_WR_S0, _RD_ERROR);
           
         } else if (_WR_S0 == state) {           // Line == L (SPD+PU)
@@ -549,11 +563,13 @@ namespace pvt::toolkit::debug::tx::v2 {
                                                                             // A: TX should expect either state - H - wait; L - start handshake
         
           // Done writing - switching to Waiting for handshake
-          _whenStallRevertTo = _CRIT__COMMERROR;
+          if (STALL_PREVENTION) {
+            _whenStallRevertTo = _CRIT__COMMERROR;
+          }
           _waitFullCycleAndSwitchToLH(_SPEC__WAITING_FOR_HANDSHAKE, _SPEC__WAITING_FOR_HANDSHAKE);
           
         } else {
-           _switchToLH(_CRIT__ALG_ERR__BAD_STATE, _CRIT__ALG_ERR__BAD_STATE);
+          _switchToLH(_CRIT__ALG_ERR__BAD_STATE, _CRIT__ALG_ERR__BAD_STATE);
         }
       }
       
@@ -598,7 +614,9 @@ namespace pvt::toolkit::debug::tx::v2 {
           } else {
             // last bit was read -> validating -> exiting
             if (_validateData()) {
-              _whenStallRevertTo = _CRIT__COMMERROR;
+              if (STALL_PREVENTION) {
+                _whenStallRevertTo = _CRIT__COMMERROR;
+              }
               _waitFullCycleAndSwitchToLH(_SPEC__WAITING_FOR_HANDSHAKE, _SPEC__WAITING_FOR_HANDSHAKE);
             } else {
               // Invalid CRC data
@@ -609,11 +627,24 @@ namespace pvt::toolkit::debug::tx::v2 {
           
         } else if (_RD_ERROR == state) {        // Line == <ANY>
           _recoverDataBack();
-          _whenStallRevertTo = _CRIT__COMMERROR;
+          if (STALL_PREVENTION) {
+            _whenStallRevertTo = _CRIT__COMMERROR;
+          }
           _switchToLH(_CRIT__COMMERROR, _CRIT__COMMERROR);
 
         } else {
-           _switchToLH(_CRIT__ALG_ERR__BAD_STATE, _CRIT__ALG_ERR__BAD_STATE);
+          _switchToLH(_CRIT__ALG_ERR__BAD_STATE, _CRIT__ALG_ERR__BAD_STATE);
+        }
+        
+      }
+
+      __attribute__((always_inline))
+      inline static void _handleNonCritState(FSMState state) {
+        if (_NC_SETUP == state) {               // Line == Any
+          __setup();
+          
+        } else {
+          _switchToLH(_CRIT__ALG_ERR__BAD_STATE, _CRIT__ALG_ERR__BAD_STATE);
         }
         
       }
@@ -648,38 +679,44 @@ namespace pvt::toolkit::debug::tx::v2 {
 
   };
 
-  template <uint8_t P, uint8_t S>
-  uint8_t OneWireErrorTransmitter<P, S>::_skipCycleTmr0 = 0;
-  template <uint8_t P, uint8_t S>
-  uint8_t OneWireErrorTransmitter<P, S>::_skipCycleTmr0p1 = 0;
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  uint8_t OneWireErrorTransmitter<P, S, _SP, _DE>::_skipCycleTmr0 = 0;
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  uint8_t OneWireErrorTransmitter<P, S, _SP, _DE>::_skipCycleTmr0p1 = 0;
 
-  template <uint8_t P, uint8_t S>
-  typename OneWireErrorTransmitter<P, S>::FSMState OneWireErrorTransmitter<P, S>::_if_L_then = OneWireErrorTransmitter<P, S>::_NOOP;
-  template <uint8_t P, uint8_t S>
-  typename OneWireErrorTransmitter<P, S>::FSMState OneWireErrorTransmitter<P, S>::_if_H_then = OneWireErrorTransmitter<P, S>::_NOOP;
-  template <uint8_t P, uint8_t S>
-  typename OneWireErrorTransmitter<P, S>::FSMState OneWireErrorTransmitter<P, S>::_if_L_then__saved4waitFullCycle = OneWireErrorTransmitter<P, S>::_NOOP;
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  typename OneWireErrorTransmitter<P, S, _SP, _DE>::FSMState OneWireErrorTransmitter<P, S, _SP, _DE>::_if_L_then
+                                                  = OneWireErrorTransmitter<P, S, _SP, _DE>::_NC_SETUP;
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  typename OneWireErrorTransmitter<P, S, _SP, _DE>::FSMState OneWireErrorTransmitter<P, S, _SP, _DE>::_if_H_then
+                                                  = OneWireErrorTransmitter<P, S, _SP, _DE>::_NC_SETUP;
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  typename OneWireErrorTransmitter<P, S, _SP, _DE>::FSMState OneWireErrorTransmitter<P, S, _SP, _DE>::_if_L_then__saved4waitFullCycle
+                                                  = OneWireErrorTransmitter<P, S, _SP, _DE>::_NOOP;
 
-  template <uint8_t P, uint8_t S>
-  volatile uint8_t OneWireErrorTransmitter<P, S>::_data[S] = {};
-  template <uint8_t P, uint8_t S>
-  volatile uint8_t OneWireErrorTransmitter<P, S>::_commError = CMERR__OK;
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  volatile uint8_t OneWireErrorTransmitter<P, S, _SP, _DE>::_data[S] = {};
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  volatile uint8_t OneWireErrorTransmitter<P, S, _SP, _DE>::_commError = CMERR__OK;
 
-  template <uint8_t P, uint8_t S>
-  uint8_t OneWireErrorTransmitter<P, S>::_writingData[S + OneWireErrorTransmitter<P, S>::_SYS_BYTES] = {};
-  template <uint8_t P, uint8_t S>
-  uint8_t OneWireErrorTransmitter<P, S>::_readingData = 0;
-  template <uint8_t P, uint8_t S>
-  uint8_t OneWireErrorTransmitter<P, S>::_bitNo = 0;
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  uint8_t OneWireErrorTransmitter<P, S, _SP, _DE>::_writingData[S + OneWireErrorTransmitter<P, S, _SP, _DE>::_SYS_BYTES] = {};
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  uint8_t OneWireErrorTransmitter<P, S, _SP, _DE>::_readingData = 0;
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  uint8_t OneWireErrorTransmitter<P, S, _SP, _DE>::_bitNo = 0;
 
-  template <uint8_t P, uint8_t S>
-  typename OneWireErrorTransmitter<P, S>::FSMState OneWireErrorTransmitter<P, S>::_stallStateIfL = OneWireErrorTransmitter<P, S>::_NOOP;
-  template <uint8_t P, uint8_t S>
-  typename OneWireErrorTransmitter<P, S>::FSMState OneWireErrorTransmitter<P, S>::_stallStateIfH = OneWireErrorTransmitter<P, S>::_NOOP;
-  template <uint8_t P, uint8_t S>
-  typename OneWireErrorTransmitter<P, S>::FSMState OneWireErrorTransmitter<P, S>::_whenStallRevertTo = OneWireErrorTransmitter<P, S>::_NOOP;
-  template <uint8_t P, uint8_t S>
-  uint8_t OneWireErrorTransmitter<P, S>::_stallCounter = 0;
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  typename OneWireErrorTransmitter<P, S, _SP, _DE>::FSMState OneWireErrorTransmitter<P, S, _SP, _DE>::_stallStateIfL
+                                                  = OneWireErrorTransmitter<P, S, _SP, _DE>::_NOOP;
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  typename OneWireErrorTransmitter<P, S, _SP, _DE>::FSMState OneWireErrorTransmitter<P, S, _SP, _DE>::_stallStateIfH
+                                                  = OneWireErrorTransmitter<P, S, _SP, _DE>::_NOOP;
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  typename OneWireErrorTransmitter<P, S, _SP, _DE>::FSMState OneWireErrorTransmitter<P, S, _SP, _DE>::_whenStallRevertTo
+                                                  = OneWireErrorTransmitter<P, S, _SP, _DE>::_NOOP;
+  template <uint8_t P, uint8_t S, bool _SP, bool _DE>
+  uint8_t OneWireErrorTransmitter<P, S, _SP, _DE>::_stallCounter = 0;
 
 
 /*
@@ -720,7 +757,7 @@ namespace pvt::toolkit::debug::tx::v2 {
 namespace pvt {
   
   template<uint8_t PORTD_PIN, uint8_t SIZE>
-  using ErrorTransmitter = pvt::toolkit::debug::tx::v2::OneWireErrorTransmitter<PORTD_PIN, SIZE>;
+  using ErrorTransmitter = pvt::toolkit::debug::tx::v2::OneWireErrorTransmitter<PORTD_PIN, SIZE, true, false>;
   
 }
 

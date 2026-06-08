@@ -1,0 +1,20 @@
+BASE : With Serial
+
+			BASE	TX	TX-SP
+Program Storage Space: 	2828	3726	3844		+1016
+Dynamic Memory:		265	280	285		+20
+
+BASE	- No Transmitter
+TX 	- Transmitter
+TX-SP 	- Transmitter minus Stall Prevention
+
+-------------------------------------------------
+BASE : No Serial
+
+			BASE    TX      TX-SP
+Program Storage Space: 	1722  	2682    2566		+960
+Dynamic Memory:		14	34	31		+20
+
+BASE	- No Transmitter
+TX 	- Transmitter
+TX-SP 	- Transmitter minus Stall Prevention
