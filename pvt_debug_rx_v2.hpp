@@ -409,6 +409,9 @@ namespace pvt::toolkit::debug::rx::v2 {
         _isReceivedData = false;
       }
       
+      /**
+       * Returns true when valid frame received
+       */
       static bool readFrame(uint8_t cmd, uint8_t &error, uint8_t &lastReadByteError) {
         bool r = __readFrame(cmd, error, lastReadByteError);
         if (true/*!r*/) {
@@ -421,7 +424,7 @@ namespace pvt::toolkit::debug::rx::v2 {
         return _isReceivedData;
       }
 
-      static uint8_t getReceivedLength() {
+      static uint8_t getReceivedDataLength() {
         return _receivedDataLength;
       }
 

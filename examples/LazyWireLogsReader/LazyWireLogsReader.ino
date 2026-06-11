@@ -22,7 +22,7 @@ void loop() {
     Serial.print("LRB Error: 0x"); Serial.println(lastReadByteError, HEX);
   }
   if (receivedFrame) {
-    Serial.print("  ReceivedLength: "); Serial.println(ErrorRx::getReceivedLength());
+    Serial.print("  ReceivedDataLength: "); Serial.println(ErrorRx::getReceivedDataLength());
     Serial.print("  Data[0]=0x"); Serial.println(ErrorRx::getDataByte(0), HEX);
     Serial.print("  Data[1]=0x"); Serial.println(ErrorRx::getDataByte(1), HEX);
     Serial.print("  Data[2]=0x"); Serial.println(ErrorRx::getDataByte(2), HEX);

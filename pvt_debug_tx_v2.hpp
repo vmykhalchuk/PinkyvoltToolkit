@@ -387,7 +387,7 @@ namespace pvt::toolkit::debug::tx::v2 {
       static uint8_t getLastFrameSentNo() { return 0; } // FIXME Implement
       static uint8_t getLastSucceesfulFrameSentNo() { return 0; } // FIXME Implement
       
-      // Helping methods to let TX device free line, and freely go to long slumber. First disable communication, than run as many times `tick()` as needed, till isCommunicating() returns false
+      // Helping methods to let TX device free line, and freely go to long slumber. First disable communication, then run as many times `tick()` as needed, till isCommunicating() returns false
       static void enableCommunication() {}; // FIXME Implement
       static void disableCommunication() {}; // FIXME Implement
       static bool isCommunicating() { return true; }; // FIXME Implement
