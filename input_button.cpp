@@ -20,7 +20,7 @@ namespace InputButton {
         }
 
         // we need to make sure that timer stays high and not overrun to become low again (important for long press)
-        ClockLR::preventTimerOverrun(_ctx.stateChangeTmstmp, TOO_LONG_TIME_FREEZE_MAX, TOO_LONG_TIME_FREEZE_MIN);
+        ClockLR::preventTimerOverrun(_ctx.stateChangeTmstmp, TOO_LONG_TIME_FREEZE_MAX, TOO_LONG_TIME_FREEZE_MIN + 1);
       break;
       case DEBOUNCE_WAITING:
         if (ClockLR::isElapsed(_ctx.debounceTmstmp, DEBOUNCE_THRESHOLD_MS)) {
@@ -45,6 +45,13 @@ namespace InputButton {
         _ctx.smState = ERROR;
       break;
     }
+  }
+
+  void reset(Def &def) {
+    Internal &_ctx = def._ctx;
+    _ctx.wasPressed = false;
+    _ctx.wasLongPressed = false;
+    _ctx.wasReleased = false;
   }
 
   bool isPressed(Def &def) {

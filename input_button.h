@@ -13,13 +13,12 @@
 // if (InputButton::wasPressed(btnPlus)) <action here>;
 namespace InputButton {
 
-  static const unsigned int DEBOUNCE_THRESHOLD_MS = 50;
-  static const unsigned int LONG_PRESS_DURATION_MS = 1000; // TODO Make it configurable via single static variable
+  static constexpr unsigned int DEBOUNCE_THRESHOLD_MS = 50;
+  static constexpr unsigned int LONG_PRESS_DURATION_MS = 1000; // TODO Make it configurable via single static variable
 
-  static const unsigned int TOO_LONG_TIME_FREEZE_MAX = 60000; // when timer reaches MAX - it will get updated to now+MIN
-  static const unsigned int TOO_LONG_TIME_FREEZE_MIN = 10000; // the bigger the gap - the more efficient it becomes (less often timer will get updated)
+  static constexpr unsigned int TOO_LONG_TIME_FREEZE_MAX = 60000; // when timer reaches MAX - it will get updated to now+MIN+1
+  static constexpr unsigned int TOO_LONG_TIME_FREEZE_MIN = 10000; // the bigger the gap - the more safe it becomes (less often timer will get updated)
   
-
   enum SMState { NOT_INITIALIZED, IDLE, DEBOUNCE_WAITING, DEBOUNCE_FINISHED, ERROR };
   
   struct Internal {
@@ -40,16 +39,20 @@ namespace InputButton {
   };
 
   void tick(Def &def);
+  
+  void reset(Def &def);
 
   bool isPressed(Def &def);
   bool isLongPressed(Def &def);
 
-  // was/has functions return `true` only once - when calling second time and button is still pressed/released - it returns `false`
+  // was/has functions return `true` only once - when calling second time and button is still
+  //                                             pressed/released - it returns `false`
   bool wasPressed(Def &def);
   bool wasLongPressed(Def &def);
   bool wasReleased(Def &def);
 
-  //FIXME Implement. Add lastPressedTmstmp into Internal. Add lastPressedLengthMs - to track if last pressed was short or long (If first was a long press - then no double click)
+  //FIXME Implement. Add lastPressedTmstmp into Internal. Add lastPressedLengthMs - to track
+  //      if last pressed was short or long (If first was a long press - then no double click)
   //bool isDoubleClicked();
 
   //TODO Add auto-repeat into wasPressed()
