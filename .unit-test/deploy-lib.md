@@ -6,3 +6,4 @@
   - Enable --zip-path config option
     - see https://arduino.github.io/arduino-cli/1.5/configuration/#configuration-keys
     - execute in cmd: arduino-cli config set library.enable_unsafe_install true
+  - Run deploy-lib.bat
