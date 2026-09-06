@@ -21,9 +21,9 @@ Constraints on Main MCU side, we will call it Transmitter:
 Constraints on Receiver side:
   - Timing constraints:
     - Receiver on contrary must dedicate all resources to monitor and instantly act.
-    - Receiver can pull line down (via 2200 Ohm resistor). Or pull line up via same resistor.
+    - Receiver can pull line down (via 2200 Ohm resistor). Or pull line up via same resistor. Or leave as is by switching pull pin to Read mode.
   - It should use any hardware possible
-  - It's main goal is to responde to Transmitter as soon as possible
+  - It's main goal is to respond to Transmitter as soon as possible
   - It must act within 1.5uS
 
 Other:
@@ -32,22 +32,24 @@ Other:
 
 #### Circuit
 ```
-                                                                    RX
+                                                                Receiver (RX)
                                                    2200 Ohm     *-----------*
                                                  *---------*    |           |
-   Main (TX)                                +----+         +----+ LINE      |
+   Main (TX)                                +----+         +----+ PULL      |
   *--------*                                |    *---------*    |           |
   |        |   220 Ohm                      |                   |           |
-  |        |  *-------*                     |                   |           |
+  |  DEBUG |  *-------*                     |                   |           |
   |   LINE +--+       +---------------------+                   |           |
   |        |  *-------*                     |                   |           |
-  |        |                                +-------------------+ PULL      |
+  |        |                                +-------------------+ LINE      |
   |        |                                                    |           |
   |        |                                                    |           |
   *--------*                                                    *-----------*
 
 ```
 
+2Do: Add 100pF-470pF cap at each end of line
+2Do: Add a tiny dual-channel TVS diode (ESD protection) on the line of Main(TX) since it is exposed to external connector
 
 
 --------
@@ -65,7 +67,7 @@ Possible Line states
    L   | L | L | L |
 
 --------------------------------------------------------
-Scenario A: RX Starts After TX. Successfull handshake.
+Scenario A: RX Starts After TX. Successful handshake.
 
 /// Testing: no M state
 RXST: 0       1   2 3      4      5 6     7      8 9   a b    c d    
